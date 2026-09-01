@@ -41,6 +41,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+@app.get("/", status_code=status.HTTP_200_OK)
+async def root():
+    return {
+        "service": "Huawei Cloud MaaS - Autonomous Triage Agent API",
+        "version": "3.0.0",
+        "status": "UP",
+        "endpoints": {
+            "swagger_docs": "/docs",
+            "health_check": "/health",
+            "webhook_n8n": "/webhook/n8n",
+            "ui_dashboard": "http://localhost:8501"
+        }
+    }
+
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     return {"status": "UP", "timestamp": datetime.now(timezone.utc).isoformat()}
