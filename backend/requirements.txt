@@ -1,0 +1,22 @@
+# Core & Web
+fastapi==0.110.0
+uvicorn[standard]==0.28.0
+pydantic==2.6.4
+httpx==0.27.0
+requests==2.31.0
+python-dotenv==1.0.1
+
+# LangGraph & Agent
+langgraph==0.0.32
+langchain-core==0.1.33
+
+# Database
+motor==3.3.2
+pymongo==4.6.2
+
+# Operator UI
+streamlit==1.32.2
+
+# Testing
+pytest==8.1.1
+pytest-asyncio==0.23.6

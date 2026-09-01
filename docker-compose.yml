@@ -1,0 +1,74 @@
+version: '3.8'
+
+networks:
+  triage-net:
+    driver: bridge
+
+services:
+  nextjs:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: triage-nextjs
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI:-mongodb://localhost:27017}
+      - PORT=3000
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    volumes:
+      - ./logs:/var/log/triage
+    networks:
+      - triage-net
+    restart: unless-stopped
+
+  fastapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: triage-fastapi
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    environment:
+      - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI:-mongodb://localhost:27017}
+      - PANGU_API_KEY=${PANGU_API_KEY:-}
+      - PANGU_BASE_URL=${PANGU_BASE_URL:-https://maas.cn-north-4.myhuaweicloud.com}
+      - OPENAI_FALLBACK_KEY=${OPENAI_FALLBACK_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - NEXTJS_HEALTH_URL=http://nextjs:3000/api/health
+    volumes:
+      - ./logs:/var/log/triage
+    depends_on:
+      - nextjs
+    networks:
+      - triage-net
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: triage-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./logs:/var/log/triage
+    depends_on:
+      - fastapi
+    networks:
+      - triage-net
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
