@@ -670,21 +670,42 @@ with col_right:
             
             st.markdown("<br><b>Session Incident History:</b>", unsafe_allow_html=True)
             if st.session_state["history_records"]:
-                st.dataframe(
-                    st.session_state["history_records"],
-                    column_config={
-                        "timestamp": "Time",
-                        "incident_id": "ID",
-                        "component": "Component",
-                        "type": "Classification",
-                        "severity": "Severity",
-                        "risk_score": "Risk",
-                        "team": "Escalation",
-                        "status": "State"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
+                table_rows = "".join([
+                    f"""<tr style="border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 12px;">
+                        <td style="padding: 10px 12px; color: #94a3b8;">{r['timestamp']}</td>
+                        <td style="padding: 10px 12px; font-family: monospace; color: #38bdf8;">{r['incident_id']}</td>
+                        <td style="padding: 10px 12px;">{r['component']}</td>
+                        <td style="padding: 10px 12px; color: {'#f87171' if r['type']=='Cybersecurity' else '#60a5fa'};">{r['type']}</td>
+                        <td style="padding: 10px 12px; font-weight: 700; color: {'#ef4444' if r['severity']=='P1' else '#38bdf8'};">{r['severity']}</td>
+                        <td style="padding: 10px 12px; font-weight: 700;">{r['risk_score']}/10</td>
+                        <td style="padding: 10px 12px;"><span style="background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 4px; font-size: 11px;">{r['team']}</span></td>
+                        <td style="padding: 10px 12px; color: #34d399; font-weight: 600;">{r['status']}</td>
+                    </tr>"""
+                    for r in st.session_state["history_records"]
+                ])
+                
+                html_table = f"""
+                <div style="overflow-x: auto; background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; margin-top: 8px;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(30, 41, 59, 0.5); font-size: 11px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px;">
+                                <th style="padding: 10px 12px;">Time</th>
+                                <th style="padding: 10px 12px;">ID</th>
+                                <th style="padding: 10px 12px;">Component</th>
+                                <th style="padding: 10px 12px;">Classification</th>
+                                <th style="padding: 10px 12px;">Severity</th>
+                                <th style="padding: 10px 12px;">Risk</th>
+                                <th style="padding: 10px 12px;">Escalation</th>
+                                <th style="padding: 10px 12px;">State</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {table_rows}
+                        </tbody>
+                    </table>
+                </div>
+                """
+                st.markdown(html_table, unsafe_allow_html=True)
 
     else:
         st.markdown("""
