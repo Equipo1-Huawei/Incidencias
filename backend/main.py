@@ -59,6 +59,8 @@ async def root():
 async def health_check():
     return {"status": "UP", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+@app.post("/", response_model=TriageResponse, status_code=status.HTTP_200_OK, include_in_schema=False)
+@app.post("/triage", response_model=TriageResponse, status_code=status.HTTP_200_OK, include_in_schema=False)
 @app.post(
     "/webhook/n8n",
     response_model=TriageResponse,

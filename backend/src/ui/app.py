@@ -131,7 +131,10 @@ with col1:
 
             with st.spinner("⏳ Agente ejecutando LangGraph, verificando salud y consultando Pangu 40B..."):
                 try:
-                    res = httpx.post(fastapi_url, json=payload, timeout=15.0)
+                    target_url = fastapi_url.strip()
+                    if not target_url.endswith("/webhook/n8n") and not target_url.endswith("/triage") and not target_url.endswith("/"):
+                        target_url = f"{target_url}/webhook/n8n"
+                    res = httpx.post(target_url, json=payload, timeout=15.0)
                     if res.status_code == 200:
                         st.session_state["last_triage"] = res.json()
                         st.success("✅ Diagnóstico completado en < 2 segundos.")
