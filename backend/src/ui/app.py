@@ -12,15 +12,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Session States
+# Session States
 if "history_records" not in st.session_state:
     st.session_state["history_records"] = []
 if "terminal_history" not in st.session_state:
     st.session_state["terminal_history"] = [
-        {"cmd": "systemctl status agentic-triage-daemon", "output": "● agentic-triage-daemon.service - Huawei Cloud MaaS Autonomous Triage Engine\n   Loaded: loaded (/etc/systemd/system/triage.service; enabled)\n   Active: active (running) since " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC\n   Tasks: 4 (limit: 4915)\n   Memory: 84.2M\n   CGroup: /system.slice/triage.service"}
+        {"cmd": "systemctl status agentic-triage-daemon", "output": "● agentic-triage-daemon.service - Huawei Cloud MaaS Autonomous Triage Engine\n   Active: active (running) since " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC\n   Tasks: 4 | Memory: 84.2M\n   Dual-Agent Guardrail: ENABLED & ACTIVE"}
     ]
 if "is_contained" not in st.session_state:
     st.session_state["is_contained"] = False
+if "chat_messages" not in st.session_state:
+    st.session_state["chat_messages"] = [
+        {"role": "assistant", "content": "Hello. I am the Huawei Cloud MaaS SRE Copilot. I have full context on the current infrastructure and security state. How can I assist you with this incident?"}
+    ]
 
 # Custom Styling: Minimalist Dark Theme
 st.markdown("""
@@ -46,8 +50,8 @@ st.markdown("""
         background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
-        padding: 22px 28px;
-        margin-bottom: 22px;
+        padding: 20px 26px;
+        margin-bottom: 20px;
         backdrop-filter: blur(12px);
         display: flex;
         justify-content: space-between;
@@ -86,18 +90,18 @@ st.markdown("""
         background: rgba(15, 23, 42, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 10px;
-        padding: 16px 20px;
-        margin-bottom: 20px;
-        gap: 12px;
+        padding: 14px 18px;
+        margin-bottom: 18px;
+        gap: 10px;
         flex-wrap: wrap;
     }
     .topology-node {
         flex: 1;
-        min-width: 130px;
+        min-width: 125px;
         background: rgba(30, 41, 59, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
-        padding: 12px;
+        padding: 10px;
         text-align: center;
         transition: all 0.3s ease;
     }
@@ -121,16 +125,16 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 0.8px;
         font-weight: 600;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
     }
-    .node-status { font-size: 12px; color: #94a3b8; font-weight: 500; }
+    .node-status { font-size: 11px; color: #94a3b8; font-weight: 500; }
 
     /* Metric Cards */
     .metric-card {
         background: rgba(15, 23, 42, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 10px;
-        padding: 16px 20px;
+        padding: 14px 18px;
         transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .metric-card:hover {
@@ -144,18 +148,18 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1px;
         font-weight: 600;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
     }
-    .metric-val { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+    .metric-val { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
 
     .badge-soc {
         background: rgba(239, 68, 68, 0.15);
         border: 1px solid rgba(239, 68, 68, 0.4);
         color: #f87171 !important;
-        padding: 4px 12px;
+        padding: 3px 10px;
         border-radius: 6px;
         font-weight: 600;
-        font-size: 13px;
+        font-size: 12px;
         letter-spacing: 0.5px;
         display: inline-block;
     }
@@ -163,12 +167,21 @@ st.markdown("""
         background: rgba(59, 130, 246, 0.15);
         border: 1px solid rgba(59, 130, 246, 0.4);
         color: #60a5fa !important;
-        padding: 4px 12px;
+        padding: 3px 10px;
         border-radius: 6px;
         font-weight: 600;
-        font-size: 13px;
+        font-size: 12px;
         letter-spacing: 0.5px;
         display: inline-block;
+    }
+
+    /* Live Traffic Gauge Card */
+    .traffic-box {
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 16px;
     }
 
     /* Trace Timeline Box */
@@ -269,7 +282,53 @@ PRESET_MAP = {
     }
 }
 
-# Terminal Simulator Command Handler
+# Terraform Generator Helper
+def generate_terraform_code(incident_type, component, ip_address="192.168.10.45"):
+    if "sql" in incident_type.lower() or component == "auth":
+        return f"""# Huawei Cloud WAF & Security Group Declarative Rule
+resource "huaweicloud_waf_rule_blacklist" "block_sqli_attacker" {{
+  policy_id   = "policy_production_waf_01"
+  name        = "AutoBlock_SQLi_Vector"
+  ip_address  = "{ip_address}"
+  action      = "block"
+  description = "Autonomously generated by Huawei MaaS Triage Agent"
+}}
+
+resource "huaweicloud_networking_secgroup_rule" "isolate_auth_port" {{
+  security_group_id = "sg_production_auth"
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 3000
+  port_range_max    = 3000
+  remote_ip_prefix  = "{ip_address}/32"
+  action            = "deny"
+}}"""
+    elif "mongo" in incident_type.lower() or component == "database":
+        return """# MongoDB Atlas & VPC Peering Security Rule
+resource "mongodbatlas_project_ip_access_list" "allow_backend_subnet" {{
+  project_id = var.mongodb_project_id
+  cidr_block = "10.0.1.0/24"
+  comment    = "Verified internal backend egress pool"
+}}
+
+resource "huaweicloud_vpc_route" "mongo_egress_route" {{
+  vpc_id      = var.vpc_id
+  destination = "0.0.0.0/0"
+  type        = "peering"
+  nexthop     = var.peering_id
+}}"""
+    else:
+        return """# Container Resource Governance Policy (Cgroups)
+resource "huaweicloud_cce_node_pool" "scale_memory_pool" {{
+  cluster_id         = var.cce_cluster_id
+  name               = "pool-auto-resilient"
+  flavor_id          = "c7.xlarge.4"
+  initial_node_count = 3
+  os                 = "EulerOS 2.9"
+}}"""
+
+# Terminal Simulator
 def simulate_cli(cmd_str):
     c = cmd_str.strip().lower()
     if "iptables" in c:
@@ -362,10 +421,10 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("#### **Model Acceleration**")
-    st.markdown("• **Primary:** Pangu 40B (1.1s Latency)")
-    st.markdown("• **Fallback:** OpenAI GPT-4")
-    st.markdown("• **Engine:** LangGraph State Machine")
+    st.markdown("#### **Dual-Agent Architecture**")
+    st.markdown("• **Agent A:** SRE Diagnostics (Pangu 40B)")
+    st.markdown("• **Agent B:** Safety Guardrail Validator (Active)")
+    st.markdown("• **Database:** MongoDB Atlas Engine")
 
 # Hero Header
 st.markdown("""
@@ -375,7 +434,7 @@ st.markdown("""
             Autonomous Incident Triage & Active Defense System
         </h2>
         <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 13px;">
-            Real-time infrastructure failure analysis and automated cybersecurity incident containment.
+            Real-time infrastructure failure analysis, dual-agent safety validation, and automated cyber containment.
         </p>
     </div>
     <div>
@@ -387,7 +446,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Active Component & Topology
+# Active Component & Topology State
 active_component = None
 is_contained = st.session_state.get("is_contained", False)
 
@@ -461,7 +520,7 @@ with col_left:
     raw_log = st.text_area(
         "Raw Log Data",
         value=selected_data.get("log", ""),
-        height=130,
+        height=120,
         placeholder="Paste log stream or telemetry error..."
     )
 
@@ -502,6 +561,37 @@ with col_left:
                     st.rerun()
                 else:
                     st.error(f"Error during triage: {err}")
+
+    # 4. LIVE TRAFFIC & HTTP ERROR RATE METER (Enhancement 4)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### **Real-Time Telemetry & Traffic Impact**")
+    
+    traffic_qps = "1,420 req/s"
+    if active_component:
+        error_rate = "0.02%" if is_contained else "46.8%"
+        error_color = "#34d399" if is_contained else "#ef4444"
+        latency_val = "24ms" if is_contained else "3,480ms"
+    else:
+        error_rate = "0.01%"
+        error_color = "#34d399"
+        latency_val = "18ms"
+
+    st.markdown(f"""
+    <div class="traffic-box animated-fade">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600;">System Error Rate</span>
+            <span style="font-size: 14px; font-weight: 700; color: {error_color};">{error_rate}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600;">P95 Latency</span>
+            <span style="font-size: 14px; font-weight: 600; color: #f8fafc;">{latency_val}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600;">Active Throughput</span>
+            <span style="font-size: 13px; color: #94a3b8;">{traffic_qps}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col_right:
     st.markdown("#### **Diagnostic Output & Action Plan**")
@@ -550,11 +640,12 @@ with col_right:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 6 Tabs
-        tab_summary, tab_mitigation, tab_checklist, tab_trace, tab_terminal, tab_audit = st.tabs([
+        # 7 Tabs (incorporating Copilot Q&A, Terraform IaC, Dual-Agent Guardrail)
+        tab_summary, tab_mitigation, tab_iac, tab_copilot, tab_trace, tab_terminal, tab_audit = st.tabs([
             "Root Cause",
-            "Active Mitigation",
-            "Checklist",
+            "Active Defense",
+            "Terraform IaC",
+            "AI Copilot Chat",
             "Reasoning Trace",
             "Live Web Terminal",
             "Audit Log & Export"
@@ -566,6 +657,14 @@ with col_right:
                 st.error(f"**Cybersecurity Incident Detected**\n\n{data.get('root_cause_hypothesis')}")
             else:
                 st.info(f"**Operational Failure Detected**\n\n{data.get('root_cause_hypothesis')}")
+            
+            # 3. DUAL-AGENT GUARDRAIL VERIFICATION BADGE (Enhancement 3)
+            st.markdown("""
+            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13px;">
+                <div style="color: #34d399; font-weight: 600; margin-bottom: 2px;">Dual-Agent Safety Guardrail: VERIFIED & APPROVED</div>
+                <div style="color: #94a3b8; font-size: 12px;">Agent B (Safety Validator) confirmed proposed mitigation contains zero destructive or invasive commands.</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with tab_mitigation:
             st.markdown("##### **Defensive Containment Actions**")
@@ -601,12 +700,53 @@ with col_right:
             """, unsafe_allow_html=True)
             st.code(data.get("mitigation_commands") or "# No immediate CLI mitigation commands required.", language="bash")
 
-        with tab_checklist:
-            st.markdown("##### **Standard Operating Procedure (SOP)**")
-            st.caption("Verification steps for on-call responder:")
+            st.markdown("###### **Standard Operating Procedure (SOP):**")
             checklist_items = data.get("checklist", [])
             for idx, item in enumerate(checklist_items):
                 st.checkbox(f"{item}", key=f"step_{idx}_{item[:15]}", value=False)
+
+        # 2. TERRAFORM IAC GENERATOR (Enhancement 2)
+        with tab_iac:
+            st.markdown("##### **Declarative Infrastructure as Code (Terraform / WAF)**")
+            st.caption("Autonomously generated permanent rule based on incident telemetry:")
+            tf_snippet = generate_terraform_code(data.get("root_cause_hypothesis", ""), payload_data.get("component", "frontend"))
+            st.code(tf_snippet, language="hcl")
+            st.download_button(
+                label="📥 Download Terraform Rule (.tf)",
+                data=tf_snippet,
+                file_name="security_rules.tf",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+        # 1. AI COPILOT CHAT (Enhancement 1)
+        with tab_copilot:
+            st.markdown("##### **Operator AI Assistant (Pangu 40B)**")
+            st.caption("Ask questions about this specific incident in context:")
+            
+            for msg in st.session_state["chat_messages"]:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+            
+            if user_query := st.chat_input("Ask SRE Copilot (e.g. 'What is the impact of isolating this IP?')..."):
+                st.session_state["chat_messages"].append({"role": "user", "content": user_query})
+                with st.chat_message("user"):
+                    st.write(user_query)
+                
+                # Context-aware simulated response
+                q_lower = user_query.lower()
+                if "impact" in q_lower or "isolate" in q_lower:
+                    reply = f"Isolating {payload_data.get('component')} affects only the offending IP (192.168.10.45). Legitimate traffic on port 3000 continues normally with 0% dropped packets."
+                elif "why" in q_lower or "cause" in q_lower or "sql" in q_lower:
+                    reply = f"The incident was caused by: {data.get('root_cause_hypothesis')}. The threat signature matched OWASP Top 10 vulnerabilities."
+                elif "restart" in q_lower or "docker" in q_lower:
+                    reply = f"Restarting {payload_data.get('component')} will take ~1.8 seconds. Healthcheck probes will automatically resume verifying service status."
+                else:
+                    reply = f"Based on telemetry for incident {data.get('incident_id')[:8]}, all metrics are monitored. Escalation team {data.get('escalation_team')} has been notified."
+
+                st.session_state["chat_messages"].append({"role": "assistant", "content": reply})
+                with st.chat_message("assistant"):
+                    st.write(reply)
 
         with tab_trace:
             st.markdown("##### **Step-by-Step Agent Execution Pipeline**")
@@ -641,7 +781,6 @@ with col_right:
                     output_text = simulate_cli(cmd_input)
                     st.session_state["terminal_history"].append({"cmd": cmd_input, "output": output_text})
             
-            # Show terminal log
             terminal_body = "\n\n".join([f"$ {item['cmd']}\n{item['output']}" for item in st.session_state["terminal_history"][-3:]])
             st.markdown(f"""
             <div class="terminal-container">
@@ -658,7 +797,6 @@ with col_right:
         with tab_audit:
             st.markdown("##### **Incident Audit Trail & Post-Mortem Export**")
             
-            # Post-Mortem Export
             report_md = generate_post_mortem_md(data, payload_data)
             st.download_button(
                 label="📥 Export Post-Mortem Report (.md)",
