@@ -17,7 +17,7 @@ async def node_analyze_incident(state: AgentState) -> dict:
         step_number=1,
         tool_name="validate_incident",
         input={"description": description},
-        output=json.dumps(val_res),
+        output=json.dumps(val_res, default=str),
         reasoning="Extract entities, identify component and inspect cybersecurity signatures"
     ))
 
@@ -49,7 +49,7 @@ async def node_execute_tools(state: AgentState) -> dict:
         step_number=2,
         tool_name="check_health",
         input={"component": component},
-        output=json.dumps(health_res),
+        output=json.dumps(health_res, default=str),
         reasoning=f"Verify live operational health for component: {component}"
     ))
 
@@ -59,7 +59,7 @@ async def node_execute_tools(state: AgentState) -> dict:
         step_number=3,
         tool_name="query_historical",
         input={"component": component, "incident_type": incident_type},
-        output=json.dumps(hist_res),
+        output=json.dumps(hist_res, default=str),
         reasoning="Query MongoDB Atlas for past resolution patterns and MTTD/MTTR"
     ))
 
@@ -69,7 +69,7 @@ async def node_execute_tools(state: AgentState) -> dict:
         step_number=4,
         tool_name="search_kb",
         input={"incident_type": incident_type, "component": component},
-        output=json.dumps(kb_res),
+        output=json.dumps(kb_res, default=str),
         reasoning="Retrieve known remediation procedures"
     ))
 
@@ -110,7 +110,7 @@ async def node_calculate_score(state: AgentState) -> dict:
         step_number=5,
         tool_name="calculate_risk",
         input={"component": component, "severity": severity, "is_security_event": is_sec},
-        output=json.dumps(risk_res),
+        output=json.dumps(risk_res, default=str),
         reasoning="Calculate overall incident risk score and assign escalation team"
     ))
 
@@ -163,7 +163,7 @@ JSON OUTPUT SCHEMA:
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(user_payload)}
+        {"role": "user", "content": json.dumps(user_payload, default=str)}
     ]
 
     try:
