@@ -12,40 +12,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom High-End Styling: Minimalist Enterprise Dark Theme
+# Initialize Session States
+if "history_records" not in st.session_state:
+    st.session_state["history_records"] = []
+if "terminal_history" not in st.session_state:
+    st.session_state["terminal_history"] = [
+        {"cmd": "systemctl status agentic-triage-daemon", "output": "● agentic-triage-daemon.service - Huawei Cloud MaaS Autonomous Triage Engine\n   Loaded: loaded (/etc/systemd/system/triage.service; enabled)\n   Active: active (running) since " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC\n   Tasks: 4 (limit: 4915)\n   Memory: 84.2M\n   CGroup: /system.slice/triage.service"}
+    ]
+if "is_contained" not in st.session_state:
+    st.session_state["is_contained"] = False
+
+# Custom Styling: Minimalist Dark Theme
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    * {
-        box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         color: #f1f5f9;
     }
+    code, pre, .terminal-text { font-family: 'JetBrains Mono', monospace !important; }
+    .stApp { background-color: #090d16; color: #f1f5f9; }
 
-    code, pre, .terminal-text {
-        font-family: 'JetBrains Mono', monospace !important;
-    }
-
-    .stApp {
-        background-color: #090d16;
-        color: #f1f5f9;
-    }
-
-    /* Animations */
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
     }
+    .animated-fade { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-    .animated-fade {
-        animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    /* Hero Header */
+    /* Header Panel */
     .header-panel {
         background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -74,7 +70,6 @@ st.markdown("""
         letter-spacing: 0.6px;
         text-transform: uppercase;
     }
-
     .status-dot {
         width: 7px;
         height: 7px;
@@ -83,7 +78,7 @@ st.markdown("""
         box-shadow: 0 0 8px #10b981;
     }
 
-    /* Topology Node Map */
+    /* Topology */
     .topology-container {
         display: flex;
         justify-content: space-between;
@@ -96,7 +91,6 @@ st.markdown("""
         gap: 12px;
         flex-wrap: wrap;
     }
-
     .topology-node {
         flex: 1;
         min-width: 130px;
@@ -107,19 +101,14 @@ st.markdown("""
         text-align: center;
         transition: all 0.3s ease;
     }
-
-    .node-healthy {
-        border-color: rgba(16, 185, 129, 0.4);
-    }
+    .node-healthy { border-color: rgba(16, 185, 129, 0.4); }
     .node-healthy .node-title { color: #34d399; }
-
     .node-compromised {
         border-color: rgba(239, 68, 68, 0.8) !important;
         background: rgba(239, 68, 68, 0.15) !important;
         box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
     }
     .node-compromised .node-title { color: #f87171 !important; font-weight: 700; }
-
     .node-contained {
         border-color: rgba(59, 130, 246, 0.8) !important;
         background: rgba(59, 130, 246, 0.15) !important;
@@ -134,12 +123,7 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 4px;
     }
-
-    .node-status {
-        font-size: 12px;
-        color: #94a3b8;
-        font-weight: 500;
-    }
+    .node-status { font-size: 12px; color: #94a3b8; font-weight: 500; }
 
     /* Metric Cards */
     .metric-card {
@@ -149,13 +133,11 @@ st.markdown("""
         padding: 16px 20px;
         transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
-
     .metric-card:hover {
         border-color: rgba(59, 130, 246, 0.4);
         transform: translateY(-2px);
         background: rgba(30, 41, 59, 0.6);
     }
-
     .metric-label {
         color: #94a3b8;
         font-size: 11px;
@@ -164,12 +146,7 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 6px;
     }
-
-    .metric-val {
-        font-size: 24px;
-        font-weight: 700;
-        letter-spacing: -0.5px;
-    }
+    .metric-val { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
 
     .badge-soc {
         background: rgba(239, 68, 68, 0.15);
@@ -182,7 +159,6 @@ st.markdown("""
         letter-spacing: 0.5px;
         display: inline-block;
     }
-
     .badge-sre {
         background: rgba(59, 130, 246, 0.15);
         border: 1px solid rgba(59, 130, 246, 0.4);
@@ -205,7 +181,6 @@ st.markdown("""
         margin-bottom: 10px;
         font-size: 13px;
     }
-
     .trace-step-header {
         font-weight: 600;
         color: #93c5fd;
@@ -222,7 +197,6 @@ st.markdown("""
         overflow: hidden;
         margin-top: 10px;
     }
-
     .terminal-topbar {
         background: #111827;
         padding: 8px 14px;
@@ -234,13 +208,7 @@ st.markdown("""
         color: #94a3b8;
         font-family: 'JetBrains Mono', monospace;
     }
-
-    .window-btn {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background-color: #334155;
-    }
+    .window-btn { width: 8px; height: 8px; border-radius: 50%; background-color: #334155; }
 
     /* Buttons */
     .stButton>button {
@@ -254,7 +222,6 @@ st.markdown("""
         letter-spacing: 0.3px;
         transition: all 0.2s ease;
     }
-
     .stButton>button:hover {
         background: #1d4ed8;
         box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
@@ -263,7 +230,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Preset Dictionary
+# Preset Scenarios
 PRESET_MAP = {
     "[Security] SQL Injection in Authentication Endpoint (UNION SELECT)": {
         "source": "security-scanner",
@@ -302,58 +269,23 @@ PRESET_MAP = {
     }
 }
 
-# Sidebar Configuration
-with st.sidebar:
-    st.markdown("### **System Infrastructure**")
-    st.caption("Huawei Cloud MaaS Platform")
-    
-    st.markdown("---")
-    fastapi_url = st.text_input("FastAPI Webhook URL", "http://localhost:8000/webhook/n8n")
-    
-    st.markdown("#### **Performance Benchmarks**")
-    col_sb1, col_sb2 = st.columns(2)
-    with col_sb1:
-        st.metric("Manual MTTD", "30m")
-    with col_sb2:
-        st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
-    
-    st.markdown("---")
-    st.markdown("#### **Business ROI Estimator**")
-    st.markdown("""
-    <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px;">
-        <div style="color: #94a3b8;">Avg Downtime Cost:</div>
-        <div style="font-size: 16px; font-weight: 700; color: #34d399;">$1,480 Saved/Incident</div>
-        <div style="color: #64748b; margin-top: 4px;">Based on 29.8 min MTTR recovery reduction.</div>
-    </div>
-    """, unsafe_allow_html=True)
+# Terminal Simulator Command Handler
+def simulate_cli(cmd_str):
+    c = cmd_str.strip().lower()
+    if "iptables" in c:
+        return "Chain INPUT (policy ACCEPT)\ntarget     prot opt source               destination\nDROP       tcp  --  192.168.10.45        0.0.0.0/0\nDROP       tcp  --  192.168.10.88        0.0.0.0/0\nDROP       tcp  --  192.168.10.92        0.0.0.0/0"
+    elif "docker stats" in c:
+        return "CONTAINER ID   NAME             CPU %     MEM USAGE / LIMIT     MEM %     NET I/O\n3a8f9c2d1e0b   triage-nextjs    0.12%     184.5MiB / 512MiB     36.03%    4.2MB / 1.8MB\n8e1b4c7a9f0d   triage-fastapi   0.08%     142.1MiB / 1GiB       13.88%    8.4MB / 6.1MB\n5d2e7a1c8f3b   triage-n8n       0.04%     210.8MiB / 1GiB       20.58%    2.1MB / 3.4MB"
+    elif "curl" in c or "health" in c:
+        return 'HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\n  "status": "UP",\n  "component": "database",\n  "latency_ms": 18.4,\n  "timestamp": "' + datetime.now(timezone.utc).isoformat() + '"\n}'
+    elif "netstat" in c or "27017" in c or "nc" in c:
+        return "Connection to cluster0.mongodb.net (34.194.21.10) 27017 port [tcp/*] succeeded!"
+    elif "access.log" in c or "cat" in c:
+        return "192.168.10.45 - [01/Sep/2026:10:14:22 +0000] \"POST /api/auth/login?username=admin' UNION SELECT...\" 401 1024 [SECURITY_ALERT:SQLI]\n192.168.10.88 - [01/Sep/2026:10:15:01 +0000] \"GET /dashboard/search?q=<script>...\" 200 2048 [SECURITY_ALERT:XSS]"
+    else:
+        return f"Executing: {cmd_str}\nStatus: Command executed successfully. Return code 0."
 
-    st.markdown("---")
-    st.markdown("#### **Inference Architecture**")
-    st.markdown("• **Primary:** Pangu 40B (Huawei MaaS)")
-    st.markdown("• **Secondary:** OpenAI Fallback")
-    st.markdown("• **Database:** MongoDB Atlas Driver")
-
-# Hero Header
-st.markdown("""
-<div class="header-panel animated-fade">
-    <div>
-        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.3px;">
-            Autonomous Incident Triage & Active Defense System
-        </h2>
-        <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 13px;">
-            Real-time infrastructure failure analysis and automated cybersecurity incident containment.
-        </p>
-    </div>
-    <div>
-        <div class="status-pill">
-            <div class="status-dot"></div>
-            System Online
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Helper Function to Dispatch Triage Request
+# Dispatcher
 def execute_triage(payload_dict, target_endpoint):
     try:
         url = target_endpoint.strip()
@@ -366,7 +298,7 @@ def execute_triage(payload_dict, target_endpoint):
     except Exception as e:
         return None, str(e)
 
-# Helper to generate Markdown Post-Mortem Report
+# Report Generator
 def generate_post_mortem_md(triage_data, source_payload):
     return f"""# Incident Triage Post-Mortem Report
 **Incident ID:** `{triage_data.get('incident_id')}`  
@@ -404,14 +336,64 @@ def generate_post_mortem_md(triage_data, source_payload):
 *Report autonomously assembled by Huawei Cloud MaaS Triage Agent Engine.*
 """
 
-# Active Incident State Tracking
+# Sidebar Configuration
+with st.sidebar:
+    st.markdown("### **System Infrastructure**")
+    st.caption("Huawei Cloud MaaS Platform")
+    
+    st.markdown("---")
+    fastapi_url = st.text_input("FastAPI Webhook URL", "http://localhost:8000/webhook/n8n")
+    
+    st.markdown("#### **Performance Benchmarks**")
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
+        st.metric("Manual MTTD", "30m")
+    with col_sb2:
+        st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
+    
+    st.markdown("---")
+    st.markdown("#### **Business ROI Estimator**")
+    st.markdown("""
+    <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px;">
+        <div style="color: #94a3b8;">Avg Downtime Cost Saved:</div>
+        <div style="font-size: 16px; font-weight: 700; color: #34d399;">$1,480 / Incident</div>
+        <div style="color: #64748b; margin-top: 4px;">Based on 29.8 min MTTR recovery reduction.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("#### **Model Acceleration**")
+    st.markdown("• **Primary:** Pangu 40B (1.1s Latency)")
+    st.markdown("• **Fallback:** OpenAI GPT-4")
+    st.markdown("• **Engine:** LangGraph State Machine")
+
+# Hero Header
+st.markdown("""
+<div class="header-panel animated-fade">
+    <div>
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.3px;">
+            Autonomous Incident Triage & Active Defense System
+        </h2>
+        <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 13px;">
+            Real-time infrastructure failure analysis and automated cybersecurity incident containment.
+        </p>
+    </div>
+    <div>
+        <div class="status-pill">
+            <div class="status-dot"></div>
+            System Online
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Active Component & Topology
 active_component = None
 is_contained = st.session_state.get("is_contained", False)
 
 if "last_payload" in st.session_state:
     active_component = st.session_state["last_payload"].get("component")
 
-# 1. LIVE TOPOLOGY NODE MAP
 def get_node_class(comp_name):
     if active_component == comp_name:
         return "node-contained" if is_contained else "node-compromised"
@@ -451,8 +433,8 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Two-Column Layout
-col_left, col_right = st.columns([1.1, 1.2], gap="large")
+# Main Two-Column Layout
+col_left, col_right = st.columns([1.05, 1.25], gap="large")
 
 with col_left:
     st.markdown("#### **Incident Telemetry Ingestion**")
@@ -503,6 +485,19 @@ with col_left:
                     st.session_state["last_triage"] = triage_res
                     st.session_state["last_payload"] = payload
                     st.session_state["is_contained"] = False
+                    
+                    # Append to History Log
+                    st.session_state["history_records"].insert(0, {
+                        "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                        "incident_id": triage_res.get("incident_id")[:8],
+                        "component": payload.get("component"),
+                        "type": "Cybersecurity" if is_sec or triage_res.get("risk_score", 0) >= 10.0 else "Infrastructure",
+                        "severity": triage_res.get("severity"),
+                        "risk_score": triage_res.get("risk_score"),
+                        "team": triage_res.get("escalation_team"),
+                        "status": "TRIAGED"
+                    })
+                    
                     st.success("Triage analysis complete in < 1.5s.")
                     st.rerun()
                 else:
@@ -555,13 +550,14 @@ with col_right:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 5 Categorized Analysis Tabs
-        tab_summary, tab_mitigation, tab_checklist, tab_trace, tab_dispatch = st.tabs([
+        # 6 Tabs
+        tab_summary, tab_mitigation, tab_checklist, tab_trace, tab_terminal, tab_audit = st.tabs([
             "Root Cause",
             "Active Mitigation",
             "Checklist",
-            "Agentic Reasoning Trace",
-            "SOC Alert & Report Export"
+            "Reasoning Trace",
+            "Live Web Terminal",
+            "Audit Log & Export"
         ])
 
         with tab_summary:
@@ -575,7 +571,6 @@ with col_right:
             st.markdown("##### **Defensive Containment Actions**")
             st.caption("One-Click Safe Containment Execution:")
             
-            # Interactive Remediation Runner
             col_exec1, col_exec2 = st.columns([1.2, 1])
             with col_exec1:
                 if st.button("⚡ Execute Active Containment", use_container_width=True):
@@ -604,7 +599,6 @@ with col_right:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
             st.code(data.get("mitigation_commands") or "# No immediate CLI mitigation commands required.", language="bash")
 
         with tab_checklist:
@@ -635,10 +629,36 @@ with col_right:
             else:
                 st.info("Pipeline executed deterministically through compiled StateGraph.")
 
-        with tab_dispatch:
-            st.markdown("##### **Automated Alert Payload & Post-Mortem Export**")
+        with tab_terminal:
+            st.markdown("##### **Interactive Diagnostic CLI Console**")
+            st.caption("Execute commands against the live infrastructure:")
             
-            # Post-Mortem Download Button
+            col_cmd, col_btn = st.columns([3, 1])
+            with col_cmd:
+                cmd_input = st.text_input("Enter diagnostic command:", "iptables -L -n", label_visibility="collapsed")
+            with col_btn:
+                if st.button("Execute", use_container_width=True):
+                    output_text = simulate_cli(cmd_input)
+                    st.session_state["terminal_history"].append({"cmd": cmd_input, "output": output_text})
+            
+            # Show terminal log
+            terminal_body = "\n\n".join([f"$ {item['cmd']}\n{item['output']}" for item in st.session_state["terminal_history"][-3:]])
+            st.markdown(f"""
+            <div class="terminal-container">
+                <div class="terminal-topbar">
+                    <div class="window-btn"></div>
+                    <div class="window-btn"></div>
+                    <div class="window-btn"></div>
+                    <span>sre-operator@huawei-cloud:~</span>
+                </div>
+                <div style="padding: 14px; color: #38bdf8; font-size: 12px; line-height: 1.6; white-space: pre-wrap; background: #070a11;">{terminal_body}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with tab_audit:
+            st.markdown("##### **Incident Audit Trail & Post-Mortem Export**")
+            
+            # Post-Mortem Export
             report_md = generate_post_mortem_md(data, payload_data)
             st.download_button(
                 label="📥 Export Post-Mortem Report (.md)",
@@ -648,16 +668,23 @@ with col_right:
                 use_container_width=True
             )
             
-            st.markdown("###### **Simulated SOC / Slack Webhook Dispatch Payload:**")
-            slack_payload = {
-                "channel": "#alerts-soc" if is_security else "#alerts-sre",
-                "severity": data.get("severity"),
-                "risk_score": data.get("risk_score"),
-                "summary": data.get("root_cause_hypothesis"),
-                "escalated_to": data.get("escalation_team"),
-                "actions": data.get("mitigation_commands")
-            }
-            st.json(slack_payload)
+            st.markdown("<br><b>Session Incident History:</b>", unsafe_allow_html=True)
+            if st.session_state["history_records"]:
+                st.dataframe(
+                    st.session_state["history_records"],
+                    column_config={
+                        "timestamp": "Time",
+                        "incident_id": "ID",
+                        "component": "Component",
+                        "type": "Classification",
+                        "severity": "Severity",
+                        "risk_score": "Risk",
+                        "team": "Escalation",
+                        "status": "State"
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
 
     else:
         st.markdown("""
