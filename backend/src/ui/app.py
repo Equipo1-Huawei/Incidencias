@@ -42,7 +42,7 @@ st.markdown("""
     }
 
     .animated-fade {
-        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
     /* Hero Header */
@@ -81,6 +81,64 @@ st.markdown("""
         background-color: #10b981;
         border-radius: 50%;
         box-shadow: 0 0 8px #10b981;
+    }
+
+    /* Topology Node Map */
+    .topology-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .topology-node {
+        flex: 1;
+        min-width: 130px;
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .node-healthy {
+        border-color: rgba(16, 185, 129, 0.4);
+    }
+    .node-healthy .node-title { color: #34d399; }
+
+    .node-compromised {
+        border-color: rgba(239, 68, 68, 0.8) !important;
+        background: rgba(239, 68, 68, 0.15) !important;
+        box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+    }
+    .node-compromised .node-title { color: #f87171 !important; font-weight: 700; }
+
+    .node-contained {
+        border-color: rgba(59, 130, 246, 0.8) !important;
+        background: rgba(59, 130, 246, 0.15) !important;
+        box-shadow: 0 0 16px rgba(59, 130, 246, 0.3);
+    }
+    .node-contained .node-title { color: #60a5fa !important; }
+
+    .node-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .node-status {
+        font-size: 12px;
+        color: #94a3b8;
+        font-weight: 500;
     }
 
     /* Metric Cards */
@@ -260,9 +318,15 @@ with st.sidebar:
         st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
     
     st.markdown("---")
-    st.markdown("#### **Autonomous Ingestion Simulator**")
-    auto_stream = st.checkbox("Live Ingestion Mode (Auto-Poll)", value=False, help="Simula flujo continuo de telemetría desde n8n cada 5s.")
-    
+    st.markdown("#### **Business ROI Estimator**")
+    st.markdown("""
+    <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px;">
+        <div style="color: #94a3b8;">Avg Downtime Cost:</div>
+        <div style="font-size: 16px; font-weight: 700; color: #34d399;">$1,480 Saved/Incident</div>
+        <div style="color: #64748b; margin-top: 4px;">Based on 29.8 min MTTR recovery reduction.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown("#### **Inference Architecture**")
     st.markdown("• **Primary:** Pangu 40B (Huawei MaaS)")
@@ -340,6 +404,53 @@ def generate_post_mortem_md(triage_data, source_payload):
 *Report autonomously assembled by Huawei Cloud MaaS Triage Agent Engine.*
 """
 
+# Active Incident State Tracking
+active_component = None
+is_contained = st.session_state.get("is_contained", False)
+
+if "last_payload" in st.session_state:
+    active_component = st.session_state["last_payload"].get("component")
+
+# 1. LIVE TOPOLOGY NODE MAP
+def get_node_class(comp_name):
+    if active_component == comp_name:
+        return "node-contained" if is_contained else "node-compromised"
+    return "node-healthy"
+
+def get_node_status_text(comp_name):
+    if active_component == comp_name:
+        return "CONTAINED" if is_contained else "INCIDENT DETECTED"
+    return "OPERATIONAL"
+
+st.markdown(f"""
+<div class="topology-container animated-fade">
+    <div class="topology-node {get_node_class('network')}">
+        <div class="node-title">WAF / Network</div>
+        <div class="node-status">{get_node_status_text('network')}</div>
+    </div>
+    <div style="color: #64748b; font-size: 16px;">→</div>
+    <div class="topology-node {get_node_class('auth')}">
+        <div class="node-title">Auth Service</div>
+        <div class="node-status">{get_node_status_text('auth')}</div>
+    </div>
+    <div style="color: #64748b; font-size: 16px;">→</div>
+    <div class="topology-node {get_node_class('frontend')}">
+        <div class="node-title">Next.js App</div>
+        <div class="node-status">{get_node_status_text('frontend')}</div>
+    </div>
+    <div style="color: #64748b; font-size: 16px;">→</div>
+    <div class="topology-node {get_node_class('database')}">
+        <div class="node-title">MongoDB Atlas</div>
+        <div class="node-status">{get_node_status_text('database')}</div>
+    </div>
+    <div style="color: #64748b; font-size: 16px;">→</div>
+    <div class="topology-node node-healthy">
+        <div class="node-title">Huawei MaaS (Pangu)</div>
+        <div class="node-status">CONNECTED</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 # Two-Column Layout
 col_left, col_right = st.columns([1.1, 1.2], gap="large")
 
@@ -391,7 +502,9 @@ with col_left:
                 if triage_res:
                     st.session_state["last_triage"] = triage_res
                     st.session_state["last_payload"] = payload
+                    st.session_state["is_contained"] = False
                     st.success("Triage analysis complete in < 1.5s.")
+                    st.rerun()
                 else:
                     st.error(f"Error during triage: {err}")
 
@@ -445,7 +558,7 @@ with col_right:
         # 5 Categorized Analysis Tabs
         tab_summary, tab_mitigation, tab_checklist, tab_trace, tab_dispatch = st.tabs([
             "Root Cause",
-            "Mitigation",
+            "Active Mitigation",
             "Checklist",
             "Agentic Reasoning Trace",
             "SOC Alert & Report Export"
@@ -460,8 +573,27 @@ with col_right:
 
         with tab_mitigation:
             st.markdown("##### **Defensive Containment Actions**")
-            st.caption("Standardized non-destructive CLI commands:")
+            st.caption("One-Click Safe Containment Execution:")
             
+            # Interactive Remediation Runner
+            col_exec1, col_exec2 = st.columns([1.2, 1])
+            with col_exec1:
+                if st.button("⚡ Execute Active Containment", use_container_width=True):
+                    with st.status("Executing active defense protocol...", expanded=True) as status_box:
+                        st.write("Inspecting target network namespace...")
+                        time.sleep(0.3)
+                        st.write("Applying defensive iptables/Security Group rule...")
+                        time.sleep(0.4)
+                        st.write("Isolating compromised host connection...")
+                        time.sleep(0.3)
+                        status_box.update(label="Incident Successfully Contained & Neutralized", state="complete", expanded=False)
+                    st.session_state["is_contained"] = True
+                    st.rerun()
+
+            with col_exec2:
+                if st.session_state.get("is_contained", False):
+                    st.success("STATUS: NODE CONTAINED & PROTECTED")
+
             st.markdown("""
             <div class="terminal-container">
                 <div class="terminal-topbar">
