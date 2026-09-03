@@ -1,40 +1,52 @@
-from typing import TypedDict, Optional, List, Dict, Any
-from datetime import datetime
+"""Shared state that flows through the whole graph.
 
-class IncidentData(TypedDict, total=False):
-    """Datos del incidente recibido por webhook o UI."""
+Extends LangGraph's MessagesState with incident response fields.
+"""
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from langgraph.graph import MessagesState
+
+
+class AgentState(MessagesState):
+    plan: list[str]
+    scratchpad: dict[str, Any]
+    citations: list[dict]
+    next_agent: Optional[str]
+    loop_count: int
+    total_cost_usd: float
     incident_id: str
-    description: str
-    component: Optional[str]
     severity: Optional[str]
-    source: Optional[str]
-    is_security_event: bool
-    timestamp: datetime
-
-class DiagnosticStep(TypedDict, total=False):
-    """Registro de cada paso y herramienta ejecutada por el agente."""
-    step_number: int
-    tool_name: str
-    input: Dict[str, Any]
-    output: str
-    reasoning: str
-
-class AgentState(TypedDict, total=False):
-    """Estado global del grafo agentic."""
-    incident: IncidentData
-    identified_type: Optional[str]
-    identified_component: Optional[str]
-    diagnostic_steps: List[DiagnosticStep]
-    component_status: Optional[Dict[str, Any]]
-    historical_patterns: List[Dict[str, Any]]
-    kb_solutions: List[Dict[str, Any]]
+    affected_services: list[str]
+    iocs: list[dict]
+    timeline: list[dict]
+    actions_taken: list[dict]
+    pending_approval: Optional[dict]
+    status: str
     risk_score: float
-    estimated_mttr_minutes: Optional[float]
-    escalation_required: bool
-    escalation_path: Optional[str]
-    diagnostics_checklist: List[str]
-    root_cause_hypothesis: str
-    final_recommendation: str
     guardrail_approved: bool
-    guardrail_reason: str
-    messages: List[Dict[str, str]]
+    guardrail_reason: Optional[str]
+
+
+def initial_state(user_message, incident_id: str = "") -> dict:
+    return {
+        "messages": [user_message],
+        "plan": [],
+        "scratchpad": {},
+        "citations": [],
+        "next_agent": None,
+        "loop_count": 0,
+        "total_cost_usd": 0.0,
+        "incident_id": incident_id,
+        "severity": None,
+        "affected_services": [],
+        "iocs": [],
+        "timeline": [],
+        "actions_taken": [],
+        "pending_approval": None,
+        "status": "investigating",
+        "risk_score": 0.0,
+        "guardrail_approved": True,
+        "guardrail_reason": None,
+    }

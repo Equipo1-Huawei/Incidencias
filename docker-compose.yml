@@ -41,13 +41,19 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY:-}
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
       - PANGU_API_KEY=${PANGU_API_KEY:-}
-      - PANGU_BASE_URL=${PANGU_BASE_URL:-https://maas.cn-north-4.myhuaweicloud.com}
+      - PANGU_BASE_URL=${PANGU_BASE_URL:-https://ai.kostra.cloud/v1}
+      - HUAWEI_MODEL=${HUAWEI_MODEL:-glm-5.2}
       - OPENAI_FALLBACK_KEY=${OPENAI_FALLBACK_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - QDRANT_URL=http://qdrant:6333
       - NEXTJS_HEALTH_URL=http://nextjs:3000/api/health
       - WEBHOOK_API_KEY=${WEBHOOK_API_KEY:-}
       - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-30}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8501,http://localhost:3000}
+      - MAX_LOOPS=${MAX_LOOPS:-12}
+      - MAX_COST_USD=${MAX_COST_USD:-1.0}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./logs:/var/log/triage
@@ -59,6 +65,23 @@ services:
     depends_on:
       nextjs:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     networks:
       - triage-net
     restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: triage-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - triage-net
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
