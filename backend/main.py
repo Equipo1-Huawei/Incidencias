@@ -109,7 +109,7 @@ async def root():
         "endpoints": {
             "swagger_docs": "/docs",
             "health_check": "/health",
-            "webhook_n8n": "/webhook/n8n",
+            "webhook": "/webhook/n8n",
             "copilot_chat": "/copilot/chat",
             "copilot_stream": "/copilot/stream",
             "ui_dashboard": "http://localhost:8501"

@@ -31,13 +31,12 @@ Un **Agente Autónomo de Triage y Defensa Activa** impulsado por **Huawei Cloud 
 ```mermaid
 graph TD
     subgraph Ingestion_Layer["1. Ingesta y Telemetría"]
-        DockerLogs["Docker Stdout Logs"] --> N8N["n8n Telemetry Engine (:5678)"]
-        AccessLog["/var/log/triage/access.log"] --> N8N
+        DockerLogs["Docker Stdout Logs"] --> FastAPI["FastAPI Engine (:8000)"]
+        AccessLog["/var/log/triage/access.log"] --> FastAPI
         ChaosScripts["Chaos & Mock Scripts"] -->|Inyecta Fallos| NextJS["Next.js Monitored App (:3000)"]
     end
 
     subgraph Agent_Core["2. Núcleo Agéntico (FastAPI + LangGraph)"]
-        N8N -->|POST /webhook/n8n (Auth + Rate Limit)| FastAPI["FastAPI Engine (:8000)"]
         FastAPI --> StateGraph["LangGraph State Engine"]
 
         StateGraph --> Node1["Node 1: Entity & Security Signature Match"]
@@ -69,7 +68,7 @@ graph TD
 | **Backend API** | **Python 3.11+, FastAPI, Uvicorn, Pydantic** | API con auth, rate limiting, CORS y streaming |
 | **Base de Datos** | **Supabase (PostgreSQL)** | Almacenamiento de incidentes, KB y audit log con RLS |
 | **Frontend Monitoreado** | **Next.js 14, TypeScript** | App productiva con healthcheck activo |
-| **Ingesta de Eventos** | **n8n** | Pipeline de filtrado y despacho al webhook |
+| **Ingesta de Eventos** | **FastAPI Webhook** | Recepción directa de eventos via POST /webhook/n8n |
 | **UI de Operador** | **Streamlit** | Dashboard con copilot chat (LLM real), topología y IaC |
 | **Seguridad** | **slowapi, PyJWT, Guardrail** | Rate limiting, auth de webhook, validación dual-agente |
 | **Resilience** | **tenacity** | Retry con backoff exponencial en LLM client |
@@ -116,8 +115,6 @@ hackaton-huawei/
 │   └── pages/
 │       ├── index.tsx            # Interfaz de estado del nodo monitoreado
 │       └── api/health.ts        # Healthcheck activo contra Supabase
-├── n8n/
-│   └── n8n_workflow.json        # Flujo exportable de n8n
 └── backend/
     ├── Dockerfile               # Python 3.11 + healthcheck
     ├── requirements.txt         # FastAPI, LangGraph, Supabase, slowapi, structlog, tenacity
@@ -191,7 +188,6 @@ docker-compose up -d --build
 Servicios:
 - **Next.js:** `http://localhost:3000`
 - **FastAPI:** `http://localhost:8000`
-- **n8n:** `http://localhost:5678`
 - **Streamlit:** `http://localhost:8501`
 
 ---
