@@ -191,13 +191,13 @@ async def stream_endpoint(request: Request, payload: IncidentWebhookPayload):
         graph = get_triage_graph()
         state = initial_state(HumanMessage(content=incident_text), incident_id=payload.incident_id)
         final = ""
-        for chunk in graph.stream(state, config=config_graph, stream_mode="updates"):
+        async for chunk in graph.astream(state, config=config_graph, stream_mode="updates"):
             for node, update in chunk.items():
                 msgs = update.get("messages", []) if isinstance(update, dict) else []
                 text = msgs[-1].content if msgs else ""
                 if text:
                     final = text
-                yield {"event": "node", "data": json.dumps({"node": node, "text": text})}
+                yield {"event": "node", "data": json.dumps({"node": node, "text": text[:500]})}
         yield {"event": "done", "data": json.dumps({"answer": final, "cost_usd": cost_snapshot()["usd"]})}
 
     return EventSourceResponse(event_gen())

@@ -7,11 +7,14 @@ from langchain_openai import ChatOpenAI
 
 from src.config import config
 from src.llm.kostra_client import make_llm
+from src.llm.callbacks import CostCallback
 
 
 @lru_cache(maxsize=16)
 def _cached_llm(model: str, temperature: float) -> ChatOpenAI:
-    return make_llm(model, temperature=temperature)
+    llm = make_llm(model, temperature=temperature)
+    llm.callbacks = [CostCallback()]
+    return llm
 
 
 def get_llm(role: str = "code", temperature: float = 0.2) -> ChatOpenAI:

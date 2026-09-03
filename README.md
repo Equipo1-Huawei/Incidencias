@@ -1,241 +1,88 @@
 # Sistema de Triage Autónomo & Defensa Activa
-### Arquitectura de Referencia para el Hackathon Huawei Cloud MaaS
-**Repositorio Oficial:** [https://github.com/Equipo1-Huawei/Incidencias.git](https://github.com/Equipo1-Huawei/Incidencias.git)
+### Arquitectura Supervisor-Worker Multi-Agente para el Hackathon Huawei Cloud MaaS
 
 ---
 
-## Tabla de Contenidos
-1. [Finalidad y Propósito de Negocio](#1-finalidad-y-propósito-de-negocio)
-2. [Arquitectura del Sistema](#2-arquitectura-del-sistema)
-3. [Stack Tecnológico](#3-stack-tecnológico)
-4. [Contrato de Datos Global](#4-contrato-de-datos-global)
-5. [Estructura del Proyecto](#5-estructura-del-proyecto)
-6. [Guía de Instalación y Puesta en Marcha](#6-guía-de-instalación-y-puesta-en-marcha)
-7. [Arquitectura Multi-Agente & Guardrail de Seguridad](#7-arquitectura-multi-agente--guardrail-de-seguridad)
-8. [Scripts de Chaos Engineering & Simulación](#8-scripts-de-chaos-engineering--simulación)
-9. [Plan de Contingencia y Alta Disponibilidad](#9-plan-de-contingencia-y-alta-disponibilidad)
-
----
-
-## 1. Finalidad y Propósito de Negocio
-
-En entornos de nube y aplicaciones distribuidas críticas, los equipos de operaciones (SRE) y seguridad (SOC) gastan entre **30 a 60 minutos** por cada incidente operacional en clasificar, identificar componentes, consultar bases de conocimiento y generar comandos defensivos.
-
-### La Solución:
-Un **Agente Autónomo de Triage y Defensa Activa** impulsado por **Huawei Cloud MaaS (Pangu 40B)** y **LangGraph**, reduciendo el **MTTD de 30 minutos a menos de 1.5 segundos** (reducción del 99.2%) con contención automatizada en 1 clic, guardrail de seguridad dual-agente y estimación de ahorro de más de **$1,480 USD por incidente**.
-
----
-
-## 2. Arquitectura del Sistema
+## Arquitectura
 
 ```mermaid
-graph TD
-    subgraph Ingestion_Layer["1. Ingesta y Telemetría"]
-        DockerLogs["Docker Stdout Logs"] --> FastAPI["FastAPI Engine (:8000)"]
-        AccessLog["/var/log/triage/access.log"] --> FastAPI
-        ChaosScripts["Chaos & Mock Scripts"] -->|Inyecta Fallos| NextJS["Next.js Monitored App (:3000)"]
-    end
+flowchart TD
+    SRC[Alerta de incidente] --> API[FastAPI /triage]
+    API --> S{Supervisor IR<br/>glm-5.2}
 
-    subgraph Agent_Core["2. Núcleo Agéntico (FastAPI + LangGraph)"]
-        FastAPI --> StateGraph["LangGraph State Engine"]
+    S --> W1[triage<br/>clasifica] --> S
+    S --> W2[threat_intel<br/>enriquece IOCs] --> S
+    S --> W3[forensics<br/>logs y timeline] --> S
+    S --> W4[containment<br/>guardrail + IaC] --> S
+    S --> W5[communicator<br/>notifica] --> S
+    S --> W6[reporter<br/>persiste + postmortem] --> S
 
-        StateGraph --> Node1["Node 1: Entity & Security Signature Match"]
-        Node1 -->|conditional| Node2["Node 2: Active Health Probe & Supabase Query"]
-        Node1 -->|security shortcut| Node3["Node 3: Dynamic Risk Scoring & SLA"]
-        Node2 --> Node3
-        Node3 --> Node4["Node 4: Pangu 40B LLM Synthesis"]
-        Node4 --> Guardrail["Node 5: Agent B - Safety Guardrail Validator"]
-        Guardrail --> Persist["Node 6: Persist to Supabase"]
-    end
+    S -->|FINISH| API
+    API --> UI[Streamlit Dashboard]
 
-    subgraph Infrastructure_And_AI["3. Servicios Conectados & UI"]
-        Node2 -->|HTTP GET /api/health| NextJS
-        Node2 -->|Supabase SDK| Supabase[("Supabase (PostgreSQL)")]
-        Node4 -->|MaaS API| Pangu["Huawei Cloud MaaS (Pangu 40B)"]
-        Node4 -.->|Failover Automático| OpenAI["OpenAI GPT-4"]
-        StreamlitUI["Operator Command Center (:8501)"] -->|Live Inspection / Chat| FastAPI
-    end
+    LLM[Kostra glm-5.2] -.usa.- S
+    LLM -.usa.- W1
+    LLM -.usa.- W2
+    LLM -.usa.- W3
+    LLM -.usa.- W4
+    LLM -.usa.- W5
+    LLM -.usa.- W6
+
+    W2 -.consulta.-> VT[VirusTotal / AbuseIPDB]
+    W3 -.consulta.-> SB[Supabase PostgreSQL]
+    W4 -.valida.-> GR[Guardrail 22 patrones]
+    W6 -.persiste.-> SB
+
+    QD[Qdrant RAG] -.usa.- W2
+    QD -.usa.- W3
 ```
 
----
+## Stack
 
-## 3. Stack Tecnológico
+| Capa | Tecnología |
+|---|---|
+| LLM | Kostra glm-5.2 (OpenAI compatible) |
+| Orquestación | LangGraph supervisor-worker (6 workers) |
+| Backend | FastAPI + SSE streaming |
+| DB | Supabase (PostgreSQL) con RLS |
+| Vector Store | Qdrant (RAG runbooks/post-mortems) |
+| UI | Streamlit (streaming nodo-por-nodo) |
+| Seguridad | Guardrail (22 patrones), rate limiting, CORS |
+| Logging | structlog (JSON) |
 
-| Capa | Tecnología | Función |
+## Workers
+
+| Worker | Función | Tools |
 |---|---|---|
-| **Modelos Fundacionales** | Huawei Cloud MaaS (**Pangu 40B**) | Inferencia principal con failover automático a OpenAI |
-| **Orquestación Agéntica** | **LangGraph** (StateGraph) | Máquina de estados asíncrona con branching condicional |
-| **Backend API** | **Python 3.11+, FastAPI, Uvicorn, Pydantic** | API con auth, rate limiting, CORS y streaming |
-| **Base de Datos** | **Supabase (PostgreSQL)** | Almacenamiento de incidentes, KB y audit log con RLS |
-| **Frontend Monitoreado** | **Next.js 14, TypeScript** | App productiva con healthcheck activo |
-| **Ingesta de Eventos** | **FastAPI Webhook** | Recepción directa de eventos via POST /webhook/n8n |
-| **UI de Operador** | **Streamlit** | Dashboard con copilot chat (LLM real), topología y IaC |
-| **Seguridad** | **slowapi, PyJWT, Guardrail** | Rate limiting, auth de webhook, validación dual-agente |
-| **Resilience** | **tenacity** | Retry con backoff exponencial en LLM client |
-| **Logging** | **structlog** | Logging estructurado en JSON |
-| **Infraestructura** | **Docker & Docker Compose** | Red aislada `triage-net` con healthchecks y resource limits |
+| **triage** | Clasificar severidad, componente, security event | validate_incident, calculate_risk |
+| **threat_intel** | Enriquecer IOCs con VirusTotal/AbuseIPDB | query_virustotal, query_abuseipdb, rag_query |
+| **forensics** | Investigar causa raíz con logs y históricos | check_health, query_historical, search_kb, rag_query |
+| **containment** | Proponer mitigación + validar con guardrail | validate_commands, sanitize_commands, generate_terraform |
+| **communicator** | Redactar updates para stakeholders | (reasoning only) |
+| **reporter** | Generar post-mortem + persistir a Supabase | save_incident, save_audit |
 
----
-
-## 4. Contrato de Datos Global
-
-```json
-{
-  "incident_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "source": "nextjs | mongodb | n8n | security-scanner",
-  "timestamp": "2026-09-03T10:00:00Z",
-  "component": "frontend | database | network | auth",
-  "raw_log": "192.168.10.45 - POST /api/auth/login username=admin' UNION SELECT...",
-  "is_security_event": true,
-  "severity_hint": "P1"
-}
-```
-
----
-
-## 5. Estructura del Proyecto
-
-```
-hackaton-huawei/
-├── docker-compose.yml           # Orquestación con healthchecks y resource limits
-├── .env.example                 # Plantilla de variables (Supabase, MaaS, OpenAI)
-├── .env                         # Variables de entorno locales
-├── README.md
-├── supabase/
-│   └── schema.sql               # Esquema PostgreSQL + RLS + seed data
-├── scripts/
-│   ├── stress_memory.sh         # Inyección de estrés de memoria
-│   ├── block_atlas.sh           # Bloqueo de salida TCP 443 (simula caída DB)
-│   ├── unblock_atlas.sh         # Reversión de regla iptables
-│   └── mock_security_logs.py    # Generador de logs sintéticos (SQLi, XSS, Path Traversal)
-├── frontend/
-│   ├── Dockerfile               # Node 18 + healthcheck
-│   ├── package.json             # Next.js 14 (sin dependencia MongoDB)
-│   ├── tsconfig.json
-│   └── pages/
-│       ├── index.tsx            # Interfaz de estado del nodo monitoreado
-│       └── api/health.ts        # Healthcheck activo contra Supabase
-└── backend/
-    ├── Dockerfile               # Python 3.11 + healthcheck
-    ├── requirements.txt         # FastAPI, LangGraph, Supabase, slowapi, structlog, tenacity
-    ├── main.py                  # API con auth, rate limiting, CORS, copilot chat/stream
-    ├── src/
-    │   ├── config.py            # Config centralizada (Supabase, LLM, CORS, rate limit)
-    │   ├── logging_config.py    # structlog JSON renderer
-    │   ├── llm_client.py        # ResilientLLMClient singleton (Pangu + failover + streaming + retry)
-    │   ├── db/
-    │   │   ├── supabase_client.py  # Cliente Supabase singleton
-    │   │   └── fixtures.py      # Fixtures offline (fallback)
-    │   ├── tools/
-    │   │   ├── validators.py    # Detector de firmas (SQLi, XSS, Path Traversal, SSRF)
-    │   │   ├── queries.py       # Queries Supabase + persistencia + audit
-    │   │   └── analyzers.py     # Motor de scoring de riesgo y SLA
-    │   ├── agent/
-    │   │   ├── state.py         # Esquema TypedDict AgentState (con guardrail fields)
-    │   │   ├── tools.py         # Mapeo de herramientas
-    │   │   ├── nodes.py         # 6 nodos: analyze, tools, scoring, output, guardrail, persist
-    │   │   ├── guardrail.py     # Agente B: valida 22 patrones destructivos/ofensivos
-    │   │   └── graph.py         # Grafo con branching condicional + guardrail + persist
-    │   └── ui/
-    │       └── app.py           # Dashboard Streamlit con copilot LLM real
-    └── tests/
-        ├── test_tools.py        # 14 tests: validators, analyzers, SLA
-        ├── test_api.py          # 7 tests: endpoints, webhook, copilot
-        ├── test_guardrail.py    # 10 tests: patrones destructivos, sanitización
-        └── test_llm_client.py   # 5 tests: singleton, offline mode
-```
-
----
-
-## 6. Guía de Instalación y Puesta en Marcha
-
-### Pre-requisitos: Configurar Supabase
-
-1. Crear proyecto en https://supabase.com
-2. Ir a **Settings → API** y copiar:
-   - **Project URL** → `SUPABASE_URL`
-   - **service_role key** → `SUPABASE_KEY`
-   - **JWT Secret** → `SUPABASE_JWT_SECRET`
-3. Ir a **SQL Editor** y ejecutar `supabase/schema.sql`
-4. Configurar `.env` con esos valores
-
-### Modo A: Ejecución Rápida Local
+## Arranque
 
 ```powershell
-# 1. Instalar dependencias
 cd backend
 python -m pip install -r requirements.txt
-
-# 2. Tests (35/35)
-python -m pytest tests/ -v
-
-# 3. Iniciar FastAPI (terminal 1)
-python main.py
-
-# 4. Iniciar Streamlit (terminal 2)
-python -m streamlit run src/ui/app.py --server.port 8501
+python -m pytest tests/ -v          # 27 tests
+python main.py                       # API en :8000
+python -m streamlit run src/ui/app.py  # UI en :8501
 ```
 
-- **API Docs:** `http://localhost:8000/docs`
-- **Dashboard:** `http://localhost:8501`
+## Endpoints
 
-### Modo B: Docker Compose
+| Método | Path | Descripción |
+|---|---|---|
+| GET | /health | Healthcheck |
+| POST | /triage | Ejecutar triage completo |
+| POST | /stream | SSE streaming nodo-por-nodo |
+| POST | /copilot/chat | Chat con LLM |
+| POST | /copilot/stream | Streaming chat |
 
-```powershell
-docker-compose up -d --build
-```
+## Configuración
 
-Servicios:
-- **Next.js:** `http://localhost:3000`
-- **FastAPI:** `http://localhost:8000`
-- **Streamlit:** `http://localhost:8501`
-
----
-
-## 7. Arquitectura Multi-Agente & Guardrail de Seguridad
-
-### Agente A: SRE & SOC Diagnostics Engine
-Analiza telemetría con Pangu 40B, calcula Risk Score y genera hipótesis de causa raíz y comandos de mitigación.
-
-### Agente B: Safety Guardrail Validator
-Audita los comandos generados por el Agente A contra **22 patrones peligrosos**:
-
-**Patrones destructivos (16):**
-- `rm -rf`, `mkfs`, `dd if=`, `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`
-- `DELETE FROM ... WHERE 1=1`, fork bomb `:(){ :|:& };:`
-- `shutdown`, `reboot`, `halt`, `kill -9`
-- `> /dev/sda`, `chmod 777`, `curl | sh`, `wget | sh`
-
-**Herramientas ofensivas (6):**
-- `nmap`, `sqlmap`, `hydra`, `metasploit`, `hashcat`, `john --wordlist`
-
-Si detecta un patrón peligroso, **bloquea el comando** y lo reemplaza con una alternativa segura (`docker logs --tail 100`). El resultado se persiste en la tabla `audit_log` de Supabase.
-
----
-
-## 8. Scripts de Chaos Engineering & Simulación
-
-```bash
-# Simular caída de base de datos (bloquea HTTPS saliente)
-bash scripts/block_atlas.sh
-
-# Restaurar conectividad
-bash scripts/unblock_atlas.sh
-
-# Sobrecarga de memoria (OOM crash)
-bash scripts/stress_memory.sh
-
-# Generar logs de ciberataques sintéticos
-python scripts/mock_security_logs.py
-```
-
----
-
-## 9. Plan de Contingencia y Alta Disponibilidad
-
-- **Failover Automático de LLM:** `ResilientLLMClient` (singleton) consulta primero a **Pangu 40B** con retry exponencial (tenacity). Si falla, conmuta a **OpenAI GPT-4** o al modo offline contextual en < 1.0s.
-- **Resiliencia de Base de Datos:** Si Supabase pierde conectividad, el sistema activa automáticamente los fixtures locales en memoria sin arrojar excepciones.
-- **Degradación Controlada en Healthchecks:** Si `/api/health` no responde, retorna estado `UNKNOWN` permitiendo al grafo completar el diagnóstico.
-- **Rate Limiting:** 30 requests/minuto por IP en el webhook (configurable via `RATE_LIMIT_PER_MINUTE`).
-- **Webhook Auth:** Protegido via `X-Webhook-Key` header.
-- **CORS:** Configurable via `CORS_ORIGINS`.
+1. Supabase: ejecutar `supabase/schema.sql` en SQL Editor + `NOTIFY pgrst, 'reload schema'`
+2. `.env`: configurar `PANGU_API_KEY` (Kostra), `SUPABASE_URL`, `SUPABASE_KEY`, `VIRUSTOTAL_API_KEY`
+3. Tests: `python -m pytest tests/ -v` (27/27 pasan)
