@@ -120,9 +120,10 @@ async def health_check(request: Request):
     return {"status": "UP", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-@app.post("/webhook/n8n", response_model=TriageResponse, status_code=status.HTTP_200_OK)
+@app.post("/triage", response_model=TriageResponse, status_code=status.HTTP_200_OK)
+@app.post("/webhook/n8n", response_model=TriageResponse, status_code=status.HTTP_200_OK, include_in_schema=False)
 @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute")
-async def handle_n8n_webhook(request: Request, payload: IncidentWebhookPayload):
+async def handle_triage(request: Request, payload: IncidentWebhookPayload):
     verify_webhook_auth(request)
 
     try:
@@ -142,7 +143,7 @@ async def handle_n8n_webhook(request: Request, payload: IncidentWebhookPayload):
         )
 
         graph = get_triage_graph()
-        result = graph.invoke(
+        result = await graph.ainvoke(
             initial_state(HumanMessage(content=incident_text), incident_id=payload.incident_id),
             config=config_graph
         )

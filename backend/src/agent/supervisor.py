@@ -20,7 +20,7 @@ def build_supervisor(worker_names: list[str], system_prompt: str) -> Callable:
     tools = [make_handoff_tool(n) for n in worker_names]
     llm_router = get_llm("think", temperature=0.0).bind_tools(tools)
 
-    def supervisor(state: dict) -> Command:
+    async def supervisor(state: dict) -> Command:
         stop, reason = should_stop(state)
         if stop:
             log.info("supervisor.stop", reason=reason)
@@ -28,7 +28,7 @@ def build_supervisor(worker_names: list[str], system_prompt: str) -> Callable:
             return Command(goto=END, update={"next_agent": "FINISH", "messages": [msg]})
 
         sys = system_prompt.replace("{workers}", ", ".join(worker_names))
-        response = llm_router.invoke([SystemMessage(content=sys)] + state["messages"])
+        response = await llm_router.ainvoke([SystemMessage(content=sys)] + state["messages"])
 
         loops = state.get("loop_count", 0)
         usd = cost_snapshot()["usd"]

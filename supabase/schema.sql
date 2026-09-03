@@ -1,5 +1,5 @@
 -- Supabase schema for Autonomous Triage & Active Defense System
--- Run this in Supabase SQL Editor or via supabase CLI migration
+-- Idempotent: safe to re-run
 
 -- ============================================================
 -- 1. INCIDENT HISTORY
@@ -54,14 +54,8 @@ CREATE INDEX IF NOT EXISTS idx_kb_component
 CREATE INDEX IF NOT EXISTS idx_kb_type
     ON knowledge_base (incident_type);
 
--- Full-text search index for knowledge base
-CREATE INDEX IF NOT EXISTS idx_kb_fts
-    ON knowledge_base USING gin (
-        to_tsvector('english', coalesce(incident_type, '') || ' ' || coalesce(symptom, '') || ' ' || coalesce(root_cause, ''))
-    );
-
 -- ============================================================
--- 3. AUDIT LOG (Guardrail decisions, auth events, etc.)
+-- 3. AUDIT LOG
 -- ============================================================
 CREATE TABLE IF NOT EXISTS audit_log (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,27 +74,26 @@ CREATE INDEX IF NOT EXISTS idx_audit_type_ts
     ON audit_log (event_type, timestamp DESC);
 
 -- ============================================================
--- 4. ROW LEVEL SECURITY (RLS)
+-- 4. ROW LEVEL SECURITY (RLS) — idempotent
 -- ============================================================
 ALTER TABLE incident_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_base ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 
--- Service role bypasses RLS (used by backend)
--- Anon/authenticated roles get read-only on knowledge_base
+DROP POLICY IF EXISTS "kb_read_all" ON knowledge_base;
 CREATE POLICY "kb_read_all" ON knowledge_base
     FOR SELECT TO anon, authenticated USING (true);
 
--- Authenticated users can read incident_history
+DROP POLICY IF EXISTS "incidents_read_auth" ON incident_history;
 CREATE POLICY "incidents_read_auth" ON incident_history
     FOR SELECT TO authenticated USING (true);
 
--- Authenticated users can read audit_log
+DROP POLICY IF EXISTS "audit_read_auth" ON audit_log;
 CREATE POLICY "audit_read_auth" ON audit_log
     FOR SELECT TO authenticated USING (true);
 
 -- ============================================================
--- 5. SEED DATA
+-- 5. SEED DATA (idempotent)
 -- ============================================================
 INSERT INTO knowledge_base (incident_type, component, symptom, root_cause, resolution_steps, confidence)
 VALUES
