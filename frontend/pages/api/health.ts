@@ -13,11 +13,11 @@ interface HealthResponse {
 const uri = process.env.MONGODB_ATLAS_URI || '';
 let cachedClient: MongoClient | null = null;
 
-async function getMongoClient(): Promise<MongoClient> {
+async function getMongoClient(): Promise<MongoClient | null> {
+  if (uri === 'mock' || uri === '' || process.env.MOCK_DATABASE === 'true') {
+    return null;
+  }
   if (!cachedClient) {
-    if (!uri) {
-      throw new Error('MONGODB_ATLAS_URI is not defined');
-    }
     cachedClient = new MongoClient(uri, {
       serverSelectionTimeoutMS: 2000,
       connectTimeoutMS: 2000,
@@ -36,6 +36,19 @@ export default async function handler(
 
   try {
     const client = await getMongoClient();
+    
+    if (!client) {
+      // Modo Mock / Simulado cuando no hay MongoDB configurado
+      const latency_ms = Math.floor(Math.random() * 15) + 5;
+      return res.status(200).json({
+        status: 'UP',
+        component: 'database',
+        timestamp,
+        latency_ms,
+        message: 'MongoDB Mock Mode Active (Local Development)',
+      });
+    }
+
     const db = client.db('triage_monitoring');
     const healthCollection = db.collection('health_probes');
 

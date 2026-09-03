@@ -1,6 +1,6 @@
 # 🛡️ Sistema de Triage Autónomo & Defensa Activa
 ### Arquitectura de Referencia para el Hackathon Huawei Cloud MaaS
-**Repositorio Oficial:** [https://github.com/paquilodran/hackaton-huawei.git](https://github.com/paquilodran/hackaton-huawei.git)
+**Repositorio Oficial:** [https://github.com/Equipo1-Huawei/Incidencias.git](https://github.com/Equipo1-Huawei/Incidencias.git)
 
 ---
 
