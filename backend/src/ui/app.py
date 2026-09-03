@@ -17,14 +17,20 @@ if "history_records" not in st.session_state:
     st.session_state["history_records"] = []
 if "terminal_history" not in st.session_state:
     st.session_state["terminal_history"] = [
-        {"cmd": "systemctl status agentic-triage-daemon", "output": "● agentic-triage-daemon.service - Huawei Cloud MaaS Autonomous Triage Engine\n   Active: active (running) since " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC\n   Tasks: 4 | Memory: 84.2M\n   Dual-Agent Guardrail: ENABLED & ACTIVE"}
+        {"cmd": "systemctl status agentic-triage-daemon", "output": "● agentic-triage-daemon.service - Huawei Cloud MaaS Multi-Agent Incident Response Engine\n   Active: active (running) since " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC\n   Tasks: 4 | Memory: 84.2M\n   Architecture: Supervisor + 5 Workers (triage, investigator, remediator, communicator, postmortem_writer)\n   Human-in-the-Loop Gate: ENABLED & ACTIVE"}
     ]
 if "is_contained" not in st.session_state:
     st.session_state["is_contained"] = False
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = [
-        {"role": "assistant", "content": "Hello. I am the Huawei Cloud MaaS SRE Copilot. I have full context on the current infrastructure and security state. How can I assist you with this incident?"}
+        {"role": "assistant", "content": "Hello. I am the Huawei Cloud MaaS Multi-Agent Incident Response Copilot. I coordinate 5 specialized workers: triage, investigator, remediator, communicator, and postmortem_writer. How can I assist you with this incident?"}
     ]
+if "agent_trace" not in st.session_state:
+    st.session_state["agent_trace"] = []
+if "pending_approval" not in st.session_state:
+    st.session_state["pending_approval"] = None
+if "thread_id" not in st.session_state:
+    st.session_state["thread_id"] = str(uuid.uuid4())
 
 # Custom Styling: Minimalist Dark Theme
 st.markdown("""
@@ -344,7 +350,65 @@ def simulate_cli(cmd_str):
     else:
         return f"Executing: {cmd_str}\nStatus: Command executed successfully. Return code 0."
 
-# Dispatcher
+# Dispatcher — uses /stream (SSE) for multi-agent node-by-node streaming
+def execute_triage_stream(payload_dict, target_endpoint):
+    """Stream the incident through the multi-agent graph via SSE.
+    Returns (triage_result, agent_trace, error)."""
+    try:
+        base_url = target_endpoint.strip().replace("/webhook/n8n", "").replace("/triage", "").rstrip("/")
+        stream_url = f"{base_url}/stream"
+
+        stream_payload = {
+            "message": payload_dict.get("raw_log", ""),
+            "incident": payload_dict,
+            "thread_id": payload_dict.get("incident_id"),
+        }
+
+        trace = []
+        final_answer = ""
+        cost_usd = 0.0
+        thread_id = payload_dict.get("incident_id")
+
+        with httpx.stream("POST", stream_url, json=stream_payload, timeout=60.0) as response:
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    event_type = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_str = line.split(":", 1)[1].strip()
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    if event_type == "node":
+                        trace.append({
+                            "node": data.get("node", ""),
+                            "text": data.get("text", ""),
+                            "cost_usd": data.get("cost_usd", 0.0),
+                        })
+                        if data.get("text"):
+                            final_answer = data["text"]
+                        cost_usd = data.get("cost_usd", cost_usd)
+                    elif event_type == "done":
+                        final_answer = data.get("answer", final_answer)
+                        cost_usd = data.get("cost_usd", cost_usd)
+                        thread_id = data.get("thread_id", thread_id)
+
+        # Build a triage-like result from the trace
+        result = {
+            "incident_id": payload_dict.get("incident_id"),
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "route": [t["node"] for t in trace],
+            "cost_usd": cost_usd,
+            "thread_id": thread_id,
+            "root_cause_hypothesis": final_answer,
+        }
+        return result, trace, None
+    except Exception as e:
+        return None, [], str(e)
+
+# Legacy dispatcher (fallback)
 def execute_triage(payload_dict, target_endpoint):
     try:
         url = target_endpoint.strip()
@@ -409,7 +473,7 @@ with st.sidebar:
         st.metric("Manual MTTD", "30m")
     with col_sb2:
         st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
-    
+
     st.markdown("---")
     st.markdown("#### **Business ROI Estimator**")
     st.markdown("""
@@ -421,20 +485,25 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("#### **Dual-Agent Architecture**")
-    st.markdown("• **Agent A:** SRE Diagnostics (Pangu 40B)")
-    st.markdown("• **Agent B:** Safety Guardrail Validator (Active)")
-    st.markdown("• **Database:** MongoDB Atlas Engine")
+    st.markdown("#### **Multi-Agent Architecture**")
+    st.markdown("• **Supervisor:** Dynamic routing via handoffs")
+    st.markdown("• **triage:** Classify severity & security vs infra")
+    st.markdown("• **investigator:** Correlate logs, deploys, history")
+    st.markdown("• **remediator:** Propose gated corrective actions")
+    st.markdown("• **communicator:** Draft status updates")
+    st.markdown("• **postmortem_writer:** Generate post-mortem report")
+    st.markdown("• **HITL Gate:** Human approval for destructive actions")
+    st.markdown("• **Database:** MongoDB Atlas + Qdrant RAG")
 
 # Hero Header
 st.markdown("""
 <div class="header-panel animated-fade">
     <div>
         <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.3px;">
-            Autonomous Incident Triage & Active Defense System
+            Multi-Agent Incident Response & Active Defense System
         </h2>
         <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 13px;">
-            Real-time infrastructure failure analysis, dual-agent safety validation, and automated cyber containment.
+            Supervisor + 5 specialized workers · LangGraph · Human-in-the-Loop · Qdrant RAG
         </p>
     </div>
     <div>
@@ -538,26 +607,36 @@ with col_left:
                 "severity_hint": selected_data.get("sev", "P2")
             }
 
-            with st.spinner("Executing LangGraph reasoning pipeline and Pangu 40B inference..."):
-                triage_res, err = execute_triage(payload, fastapi_url)
+            with st.spinner("Executing multi-agent incident response pipeline (supervisor → workers)..."):
+                triage_res, agent_trace, err = execute_triage_stream(payload, fastapi_url)
                 if triage_res:
                     st.session_state["last_triage"] = triage_res
                     st.session_state["last_payload"] = payload
+                    st.session_state["agent_trace"] = agent_trace
                     st.session_state["is_contained"] = False
-                    
+                    st.session_state["thread_id"] = triage_res.get("thread_id", payload["incident_id"])
+
+                    # Check for pending approval in the trace
+                    for t in agent_trace:
+                        if "GATED" in t.get("text", "") or "requires approval" in t.get("text", "").lower():
+                            st.session_state["pending_approval"] = {"action": t["text"][:500], "node": t["node"]}
+                            break
+
                     # Append to History Log
                     st.session_state["history_records"].insert(0, {
                         "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
-                        "incident_id": triage_res.get("incident_id")[:8],
+                        "incident_id": triage_res.get("incident_id", "")[:8],
                         "component": payload.get("component"),
-                        "type": "Cybersecurity" if is_sec or triage_res.get("risk_score", 0) >= 10.0 else "Infrastructure",
-                        "severity": triage_res.get("severity"),
-                        "risk_score": triage_res.get("risk_score"),
-                        "team": triage_res.get("escalation_team"),
-                        "status": "TRIAGED"
+                        "type": "Cybersecurity" if is_sec else "Infrastructure",
+                        "severity": selected_data.get("sev", "P2"),
+                        "risk_score": triage_res.get("risk_score", 0),
+                        "team": triage_res.get("escalation_team", "—"),
+                        "status": "TRIAGED",
+                        "route": triage_res.get("route", []),
+                        "cost_usd": triage_res.get("cost_usd", 0.0),
                     })
-                    
-                    st.success("Triage analysis complete in < 1.5s.")
+
+                    st.success(f"Multi-agent pipeline complete in {len(agent_trace)} steps.")
                     st.rerun()
                 else:
                     st.error(f"Error during triage: {err}")
@@ -661,15 +740,57 @@ with col_right:
             # 3. DUAL-AGENT GUARDRAIL VERIFICATION BADGE (Enhancement 3)
             st.markdown("""
             <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13px;">
-                <div style="color: #34d399; font-weight: 600; margin-bottom: 2px;">Dual-Agent Safety Guardrail: VERIFIED & APPROVED</div>
-                <div style="color: #94a3b8; font-size: 12px;">Agent B (Safety Validator) confirmed proposed mitigation contains zero destructive or invasive commands.</div>
+                <div style="color: #34d399; font-weight: 600; margin-bottom: 2px;">Multi-Agent Safety Guardrail: VERIFIED & APPROVED</div>
+                <div style="color: #94a3b8; font-size: 12px;">Supervisor + 5 workers with human-in-the-loop gate. All destructive actions require explicit operator approval.</div>
             </div>
             """, unsafe_allow_html=True)
 
         with tab_mitigation:
             st.markdown("##### **Defensive Containment Actions**")
             st.caption("One-Click Safe Containment Execution:")
-            
+
+            # Human-in-the-loop approval gate
+            pending = st.session_state.get("pending_approval")
+            if pending:
+                st.warning(f"**Action requires human approval:**\n\n{pending.get('action', '')[:300]}")
+                col_approve, col_reject = st.columns(2)
+                with col_approve:
+                    if st.button("✅ Approve Action", type="primary", use_container_width=True):
+                        try:
+                            base_url = fastapi_url.strip().replace("/webhook/n8n", "").rstrip("/")
+                            res = httpx.post(f"{base_url}/approve", json={
+                                "thread_id": st.session_state.get("thread_id", ""),
+                                "approved": True,
+                                "reason": "Approved by operator via UI",
+                            }, timeout=15.0)
+                            if res.status_code == 200:
+                                st.success("Action approved and executed.")
+                                st.session_state["pending_approval"] = None
+                                st.session_state["is_contained"] = True
+                                st.rerun()
+                            else:
+                                st.error(f"Approval failed: {res.text}")
+                        except Exception as e:
+                            st.error(f"Approval error: {e}")
+                with col_reject:
+                    if st.button("❌ Reject Action", use_container_width=True):
+                        try:
+                            base_url = fastapi_url.strip().replace("/webhook/n8n", "").rstrip("/")
+                            res = httpx.post(f"{base_url}/approve", json={
+                                "thread_id": st.session_state.get("thread_id", ""),
+                                "approved": False,
+                                "reason": "Rejected by operator via UI",
+                            }, timeout=15.0)
+                            if res.status_code == 200:
+                                st.info("Action rejected. Incident remains under investigation.")
+                                st.session_state["pending_approval"] = None
+                                st.rerun()
+                            else:
+                                st.error(f"Rejection failed: {res.text}")
+                        except Exception as e:
+                            st.error(f"Rejection error: {e}")
+                st.divider()
+
             col_exec1, col_exec2 = st.columns([1.2, 1])
             with col_exec1:
                 if st.button("⚡ Execute Active Containment", use_container_width=True):
@@ -749,25 +870,73 @@ with col_right:
                     st.write(reply)
 
         with tab_trace:
-            st.markdown("##### **Step-by-Step Agent Execution Pipeline**")
-            st.caption("LangGraph dynamic reasoning loop & state inspection:")
-            
-            diagnostic_steps = data.get("diagnostic_steps", [])
-            if diagnostic_steps:
-                for step in diagnostic_steps:
+            st.markdown("##### **Multi-Agent Execution Pipeline**")
+            st.caption("Supervisor → Worker routing via LangGraph handoffs:")
+
+            agent_trace = st.session_state.get("agent_trace", [])
+            if agent_trace:
+                # Show the routing flow
+                route_nodes = [t["node"] for t in agent_trace]
+                flow_str = " → ".join(route_nodes)
+                st.markdown(f"""
+                <div class="trace-step" style="border-left-color: #f59e0b;">
+                    <div class="trace-step-header">
+                        <span><b>Routing Flow</b></span>
+                        <span style="font-size: 11px; color: #64748b;">{len(agent_trace)} steps</span>
+                    </div>
+                    <div style="color: #fbbf24; font-size: 12px; font-family: monospace;">{flow_str}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                for i, step in enumerate(agent_trace):
+                    node = step.get("node", "")
+                    text = step.get("text", "")
+                    cost = step.get("cost_usd", 0.0)
+
+                    # Color-code by node type
+                    if node == "supervisor":
+                        border_color = "#f59e0b"
+                        icon = "🧭"
+                    elif node == "triage":
+                        border_color = "#3b82f6"
+                        icon = "🔍"
+                    elif node == "investigator":
+                        border_color = "#8b5cf6"
+                        icon = "🔬"
+                    elif node == "remediator":
+                        border_color = "#ef4444"
+                        icon = "🔧"
+                    elif node == "communicator":
+                        border_color = "#10b981"
+                        icon = "📢"
+                    elif node == "postmortem_writer":
+                        border_color = "#06b6d4"
+                        icon = "📝"
+                    elif node == "approval_gate":
+                        border_color = "#f97316"
+                        icon = "🚦"
+                    else:
+                        border_color = "#64748b"
+                        icon = "⚙️"
+
                     st.markdown(f"""
-                    <div class="trace-step">
+                    <div class="trace-step" style="border-left-color: {border_color};">
                         <div class="trace-step-header">
-                            <span>Step {step.get('step_number')}: <b>{step.get('tool_name')}</b></span>
-                            <span style="font-size: 11px; color: #64748b;">SUCCESS</span>
+                            <span>{icon} Step {i+1}: <b>{node}</b></span>
+                            <span style="font-size: 11px; color: #64748b;">${cost:.4f}</span>
                         </div>
-                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 4px;">{step.get('reasoning')}</div>
+                        <div style="color: #94a3b8; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap;">{text[:500]}</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    with st.expander(f"Inspect I/O for Step {step.get('step_number')} ({step.get('tool_name')})", expanded=False):
-                        st.json({"input": step.get("input"), "output": step.get("output")})
+                    with st.expander(f"Full output for Step {i+1} ({node})", expanded=False):
+                        st.text(text)
             else:
                 st.info("Pipeline executed deterministically through compiled StateGraph.")
+
+            # Show cost summary
+            if agent_trace:
+                total_cost = agent_trace[-1].get("cost_usd", 0.0) if agent_trace else 0.0
+                st.caption(f"Total pipeline cost: ${total_cost:.4f}")
 
         with tab_terminal:
             st.markdown("##### **Interactive Diagnostic CLI Console**")

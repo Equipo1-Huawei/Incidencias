@@ -27,6 +27,18 @@ services:
       - triage-net
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: triage-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - triage-net
+    restart: unless-stopped
+
   fastapi:
     build:
       context: ./backend
@@ -34,7 +46,6 @@ services:
     container_name: triage-fastapi
     ports:
       - "8000:8000"
-      - "8501:8501"
     environment:
       - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI:-mongodb://localhost:27017}
       - PANGU_API_KEY=${PANGU_API_KEY:-}
@@ -42,10 +53,35 @@ services:
       - OPENAI_FALLBACK_KEY=${OPENAI_FALLBACK_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - NEXTJS_HEALTH_URL=http://nextjs:3000/api/health
+      - QDRANT_URL=http://qdrant:6333
+      - MAX_LOOPS=${MAX_LOOPS:-12}
+      - MAX_COST_USD=${MAX_COST_USD:-1.0}
     volumes:
       - ./logs:/var/log/triage
     depends_on:
       - nextjs
+      - qdrant
+    networks:
+      - triage-net
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: triage-streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - MONGODB_ATLAS_URI=mock
+      - PANGU_API_KEY=${PANGU_API_KEY:-}
+      - OPENAI_FALLBACK_KEY=${OPENAI_FALLBACK_KEY:-}
+      - NEXTJS_HEALTH_URL=http://nextjs:3000/api/health
+      - FASTAPI_WEBHOOK_URL=http://fastapi:8000/webhook/n8n
+      - QDRANT_URL=http://qdrant:6333
+    command: ["streamlit", "run", "src/ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    depends_on:
+      - fastapi
     networks:
       - triage-net
     restart: unless-stopped
@@ -72,3 +108,4 @@ services:
 
 volumes:
   n8n_data:
+  qdrant_data:
