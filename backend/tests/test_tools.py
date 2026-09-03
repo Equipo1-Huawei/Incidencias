@@ -2,33 +2,67 @@ import pytest
 from src.tools.validators import validate_incident_description
 from src.tools.analyzers import calculate_risk_score, estimate_sla
 
+
 def test_validate_incident_sqli():
-    """Valida detección de SQL Injection y marcado de evento de seguridad."""
+    """Valida deteccion de SQL Injection y marcado de evento de seguridad."""
     log = "POST /api/auth/login username=admin' UNION SELECT 1,password FROM users--"
     res = validate_incident_description(log)
     assert res["is_security_event"] is True
     assert "SQL_INJECTION" in res["security_types"]
     assert res["extracted_fields"]["component"] == "auth"
 
+
 def test_validate_incident_xss():
-    """Valida detección de Cross-Site Scripting."""
+    """Valida deteccion de Cross-Site Scripting."""
     log = "GET /search?q=<script>alert('pwned')</script>"
     res = validate_incident_description(log)
     assert res["is_security_event"] is True
     assert "CROSS_SITE_SCRIPTING" in res["security_types"]
 
+
 def test_validate_incident_path_traversal():
-    """Valida detección de Path Traversal."""
+    """Valida deteccion de Path Traversal."""
     log = "GET /api/static/../../../../etc/passwd"
     res = validate_incident_description(log)
     assert res["is_security_event"] is True
     assert "PATH_TRAVERSAL" in res["security_types"]
 
+
 def test_validate_legitimate_log():
-    """Verifica que un log legítimo con palabras comunes no produzca falso positivo."""
+    """Verifica que un log legitimo con palabras comunes no produzca falso positivo."""
     log = "SELECT query completed in 45ms for user dashboard."
     res = validate_incident_description(log)
     assert res["is_security_event"] is False
+
+
+def test_validate_sqli_boolean_based():
+    """Detecta SQLi boolean-based blind."""
+    log = "GET /product?id=1 AND 1=1--"
+    res = validate_incident_description(log)
+    assert res["is_security_event"] is True
+
+
+def test_validate_xss_event_handler():
+    """Detecta XSS via event handler."""
+    log = "GET /page?q=<img src=x onerror=alert(1)>"
+    res = validate_incident_description(log)
+    assert res["is_security_event"] is True
+    assert "CROSS_SITE_SCRIPTING" in res["security_types"]
+
+
+def test_validate_component_detection_database():
+    """Detecta componente database."""
+    log = "Connection refused to postgres on port 5432"
+    res = validate_incident_description(log)
+    assert res["extracted_fields"]["component"] == "database"
+
+
+def test_validate_component_detection_network():
+    """Detecta componente network."""
+    log = "ECONNREFUSED gateway proxy DNS resolution failed"
+    res = validate_incident_description(log)
+    assert res["extracted_fields"]["component"] == "network"
+
 
 def test_calculate_risk_security_override():
     """Verifica que un evento de seguridad fuerce risk=10.0, P1 y SOC."""
@@ -44,8 +78,9 @@ def test_calculate_risk_security_override():
     assert res["escalation_team"] == "SOC"
     assert res["category"] == "CRITICAL_SECURITY"
 
+
 def test_calculate_risk_infrastructure_down():
-    """Verifica cálculo para caída de base de datos operacional."""
+    """Verifica calculo para caida de base de datos operacional."""
     res = calculate_risk_score(
         component="database",
         severity="P1",
@@ -56,8 +91,33 @@ def test_calculate_risk_infrastructure_down():
     assert res["risk_score"] >= 8.0
     assert res["escalation_team"] == "On-call SRE"
 
+
+def test_calculate_risk_low_severity_operational():
+    """Verifica que un P3 operacional no escale."""
+    res = calculate_risk_score(
+        component="frontend",
+        severity="P3",
+        is_operational=True,
+        is_security_event=False,
+        historical_mttd=30.0
+    )
+    assert res["risk_score"] < 5.0
+    assert res["escalation_team"] == "Platform Team"
+
+
 def test_estimate_sla_targets():
-    """Verifica los targets de respuesta y resolución según severidad."""
+    """Verifica los targets de respuesta y resolucion segun severidad."""
     sla_p1 = estimate_sla("P1")
     assert sla_p1["sla_response_minutes"] == 15
     assert sla_p1["sla_resolution_minutes"] == 60
+
+    sla_p2 = estimate_sla("P2")
+    assert sla_p2["sla_response_minutes"] == 30
+    assert sla_p2["sla_resolution_minutes"] == 240
+
+
+def test_estimate_sla_with_historical_mttr():
+    """Verifica estimacion de MTTR con datos historicos."""
+    sla = estimate_sla("P1", historical_mttr=45.0)
+    assert sla["estimated_mttr_minutes"] == 45.0
+    assert sla["sla_risk"] == "NORMAL"

@@ -1,1 +1,1 @@
-"""Database Package for MongoDB Atlas"""
+"""Database Package for Supabase (PostgreSQL)."""

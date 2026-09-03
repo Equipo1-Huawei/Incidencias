@@ -6,7 +6,7 @@ class IncidentData(TypedDict, total=False):
     incident_id: str
     description: str
     component: Optional[str]
-    severity: Optional[str] # P1, P2, P3
+    severity: Optional[str]
     source: Optional[str]
     is_security_event: bool
     timestamp: datetime
@@ -20,7 +20,7 @@ class DiagnosticStep(TypedDict, total=False):
     reasoning: str
 
 class AgentState(TypedDict, total=False):
-    """Estado global del grafo agéntico."""
+    """Estado global del grafo agentic."""
     incident: IncidentData
     identified_type: Optional[str]
     identified_component: Optional[str]
@@ -35,4 +35,6 @@ class AgentState(TypedDict, total=False):
     diagnostics_checklist: List[str]
     root_cause_hypothesis: str
     final_recommendation: str
+    guardrail_approved: bool
+    guardrail_reason: str
     messages: List[Dict[str, str]]

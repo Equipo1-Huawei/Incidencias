@@ -1,18 +1,22 @@
 import json
 from src.agent.state import AgentState, DiagnosticStep
 from src.tools.validators import validate_incident_description
-from src.tools.queries import check_component_health, query_historical_incidents, search_solutions_in_kb
+from src.tools.queries import check_component_health, query_historical_incidents, search_solutions_in_kb, save_incident_result
 from src.tools.analyzers import calculate_risk_score, estimate_sla
-from src.llm_client import ResilientLLMClient
+from src.llm_client import get_llm_client
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 async def node_analyze_incident(state: AgentState) -> dict:
-    """Nodo 1: Análisis inicial, parsing y detección de firmas de seguridad."""
+    """Nodo 1: Analisis inicial, parsing y deteccion de firmas de seguridad."""
     incident = state.get("incident", {})
     description = incident.get("description", "")
     diagnostic_steps = state.get("diagnostic_steps", [])
 
     val_res = validate_incident_description(description)
-    
+
     diagnostic_steps.append(DiagnosticStep(
         step_number=1,
         tool_name="validate_incident",
@@ -21,10 +25,11 @@ async def node_analyze_incident(state: AgentState) -> dict:
         reasoning="Extract entities, identify component and inspect cybersecurity signatures"
     ))
 
-    # Detectar o preservar evento de seguridad
     is_sec = incident.get("is_security_event", False) or val_res.get("is_security_event", False)
     component = incident.get("component") or val_res.get("extracted_fields", {}).get("component", "frontend")
     incident_type = val_res.get("extracted_fields", {}).get("incident_type", "Infrastructure Anomaly")
+
+    logger.info("node.analyze", component=component, is_security=is_sec, incident_type=incident_type)
 
     return {
         "identified_component": component,
@@ -37,13 +42,13 @@ async def node_analyze_incident(state: AgentState) -> dict:
         "diagnostic_steps": diagnostic_steps
     }
 
+
 async def node_execute_tools(state: AgentState) -> dict:
-    """Nodo 2: Ejecución de healthcheck activo en Next.js y consulta histórica en Atlas."""
+    """Nodo 2: Ejecucion de healthcheck activo en Next.js y consulta historica en Supabase."""
     component = state.get("identified_component", "frontend")
     incident_type = state.get("identified_type", "Anomaly")
     diagnostic_steps = state.get("diagnostic_steps", [])
 
-    # Tool 2: Healthcheck HTTP activo
     health_res = await check_component_health(component)
     diagnostic_steps.append(DiagnosticStep(
         step_number=2,
@@ -53,17 +58,15 @@ async def node_execute_tools(state: AgentState) -> dict:
         reasoning=f"Verify live operational health for component: {component}"
     ))
 
-    # Tool 3: Query histórico MongoDB Atlas
     hist_res = await query_historical_incidents(component, incident_type)
     diagnostic_steps.append(DiagnosticStep(
         step_number=3,
         tool_name="query_historical",
         input={"component": component, "incident_type": incident_type},
         output=json.dumps(hist_res, default=str),
-        reasoning="Query MongoDB Atlas for past resolution patterns and MTTD/MTTR"
+        reasoning="Query Supabase for past resolution patterns and MTTD/MTTR"
     ))
 
-    # Tool 4: Knowledge base search
     kb_res = await search_solutions_in_kb(incident_type, component)
     diagnostic_steps.append(DiagnosticStep(
         step_number=4,
@@ -80,8 +83,9 @@ async def node_execute_tools(state: AgentState) -> dict:
         "diagnostic_steps": diagnostic_steps
     }
 
+
 async def node_calculate_score(state: AgentState) -> dict:
-    """Nodo 3: Scoring de riesgo y estimación de SLA con regla dura de seguridad."""
+    """Nodo 3: Scoring de riesgo y estimacion de SLA con regla dura de seguridad."""
     incident = state.get("incident", {})
     component = state.get("identified_component", "frontend")
     severity = incident.get("severity", "P2")
@@ -115,7 +119,9 @@ async def node_calculate_score(state: AgentState) -> dict:
     ))
 
     sla_res = estimate_sla(risk_res.get("severity", severity))
-    
+
+    logger.info("node.scoring", risk_score=risk_res["risk_score"], escalation=risk_res["escalation_team"])
+
     return {
         "risk_score": risk_res["risk_score"],
         "escalation_required": risk_res["risk_score"] >= 7.0,
@@ -124,10 +130,11 @@ async def node_calculate_score(state: AgentState) -> dict:
         "diagnostic_steps": diagnostic_steps
     }
 
+
 async def node_generate_output(state: AgentState) -> dict:
-    """Nodo 4: Invocación del LLM Pangu 40B / fallback OpenAI para salida estructurada."""
+    """Nodo 4: Invocacion del LLM Pangu 40B / fallback OpenAI para salida estructurada."""
     incident = state.get("incident", {})
-    client = ResilientLLMClient()
+    client = get_llm_client()
 
     system_prompt = """You are the Lead SRE and Security Orchestrator for the Huawei Cloud Autonomous Triage System.
 Your job is to analyze real incident diagnostics and produce ONLY a valid, parseable JSON object.
@@ -171,6 +178,8 @@ JSON OUTPUT SCHEMA:
         cleaned = raw_response.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         parsed = json.loads(cleaned)
 
+        logger.info("node.output", provider="llm", classification=parsed.get("incident_classification"))
+
         return {
             "root_cause_hypothesis": parsed.get("root_cause_hypothesis", "Under investigation"),
             "escalation_path": parsed.get("escalation_team", state.get("escalation_path")),
@@ -180,8 +189,8 @@ JSON OUTPUT SCHEMA:
             ]),
             "final_recommendation": "\n".join(parsed.get("mitigation_commands", []))
         }
-    except Exception:
-        # Fallback determinista seguro
+    except Exception as e:
+        logger.warning("node.output_fallback", error=str(e), fallback="deterministic")
         is_sec = incident.get("is_security_event", False)
         return {
             "root_cause_hypothesis": "Active Cybersecurity Attack detected" if is_sec else f"Service failure detected on {state.get('identified_component')}",
@@ -193,3 +202,58 @@ JSON OUTPUT SCHEMA:
             ],
             "final_recommendation": "docker logs triage-nextjs --tail 100"
         }
+
+
+async def node_guardrail_validate(state: AgentState) -> dict:
+    """Nodo 5 (Agente B): Safety Guardrail Validator.
+
+    Audita los comandos generados por el Agente A para asegurar que
+    ninguna accion sea destructiva.
+    """
+    from src.agent.guardrail import validate_commands, sanitize_commands
+    from src.tools.queries import save_audit_event
+
+    commands = state.get("final_recommendation", "")
+    incident_id = state.get("incident", {}).get("incident_id")
+
+    validation = validate_commands(commands)
+
+    diagnostic_steps = state.get("diagnostic_steps", [])
+    diagnostic_steps.append(DiagnosticStep(
+        step_number=6,
+        tool_name="guardrail_validate",
+        input={"commands": commands[:500]},
+        output=json.dumps(validation, default=str),
+        reasoning="Agent B: Audit commands for destructive or invasive patterns"
+    ))
+
+    await save_audit_event(
+        event_type="GUARDRAIL_CHECK",
+        incident_id=incident_id,
+        actor="Agent B (Safety Guardrail Validator)",
+        detail={"commands_preview": commands[:200]},
+        approved=validation["approved"],
+        reason=validation["reason"]
+    )
+
+    if not validation["approved"]:
+        logger.warning("node.guardrail_blocked", incident_id=incident_id, reason=validation["reason"])
+        return {
+            "guardrail_approved": False,
+            "guardrail_reason": validation["reason"],
+            "final_recommendation": sanitize_commands(commands),
+            "diagnostic_steps": diagnostic_steps
+        }
+
+    logger.info("node.guardrail_approved", incident_id=incident_id)
+    return {
+        "guardrail_approved": True,
+        "guardrail_reason": validation["reason"],
+        "diagnostic_steps": diagnostic_steps
+    }
+
+
+async def node_persist(state: AgentState) -> dict:
+    """Nodo 6: Persiste el resultado del triage en Supabase."""
+    await save_incident_result(state)
+    return {}
